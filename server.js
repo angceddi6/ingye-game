@@ -8,9 +8,26 @@ const server = http.createServer(app);
 const io = new Server(server, { pingTimeout: 20000, pingInterval: 10000 });
 const PORT = process.env.PORT || 3000;
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.get('/health', (_, res) => res.json({ ok: true }));
-app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+const publicPath = path.resolve(__dirname, 'public');
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ ok: true });
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(publicPath, 'index.html'));
+});
+
+app.use(express.static(publicPath));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(publicPath, 'index.html'), err => {
+    if (err) {
+      console.error('index.html 전송 오류:', err);
+      res.status(500).send('게임 화면 파일을 불러오지 못했습니다.');
+    }
+  });
+});
 
 const rooms = new Map();
 const MAX_PLAYERS = 10;
