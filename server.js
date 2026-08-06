@@ -151,7 +151,7 @@ io.on('connection', socket => {
     }
     room.ladder={names,results,paths,traces,rungs,revealed:[]}; emitRoom(room);
   });
-  socket.on('ladder:reveal', ({index,all}) => { const room=getRoom(socket); if(!room||room.game!=='ladder'||!isHost(room,socket))return; room.phase='playing'; if(all)room.ladder.revealed=room.ladder.names.map((_,i)=>i); else if(Number.isInteger(index)&&!room.ladder.revealed.includes(index))room.ladder.revealed.push(index); emitRoom(room); if(room.ladder.revealed.length===room.ladder.names.length){room.phase='finished';room.timeouts.push(setTimeout(()=>emitRoom(room),1300));} });
+  socket.on('ladder:reveal', ({index,all}) => { const room=getRoom(socket); if(!room||room.game!=='ladder'||!isHost(room,socket))return; room.phase='playing'; if(all)room.ladder.revealed=room.ladder.names.map((_,i)=>i); else if(Number.isInteger(index)&&!room.ladder.revealed.includes(index))room.ladder.revealed.push(index); emitRoom(room); if(room.ladder.revealed.length===room.ladder.names.length){room.phase='finished';room.timeouts.push(setTimeout(()=>emitRoom(room),3200));} });
 
   socket.on('bingo:save', board => { const room=getRoom(socket); if(!room||room.game!=='bingo'||room.phase!=='lobby')return; const arr=(board||[]).slice(0,25).map(v=>clean(v,24)); while(arr.length<25)arr.push(''); room.bingoBoards.set(socket.id,arr); emitRoom(room); });
   socket.on('bingo:ready', ready => { const room=getRoom(socket); if(!room||room.game!=='bingo'||room.phase!=='lobby')return; const p=room.players.get(socket.id); const board=room.bingoBoards.get(socket.id)||[]; if(ready&&board.some(v=>!v))return reject(socket,'25칸을 모두 입력해주세요.'); p.ready=!!ready; emitRoom(room); });
