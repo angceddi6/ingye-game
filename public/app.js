@@ -1,6 +1,6 @@
 const socket=io();
 const app=document.getElementById('app');
-let state={room:null,nickname:'',selected:'ladder',topic:'',countdown:null,dodgeX:50,dodgeTimer:0,dodgeSpawner:null,keys:{},raceKeyDown:false,timingKeyDown:false};
+let state={room:null,nickname:'',selected:'ladder',topic:'',bingoSize:5,countdown:null,dodgeX:50,dodgeTimer:0,dodgeSpawner:null,keys:{},raceKeyDown:false,timingKeyDown:false};
 let bingoDraft=null;
 let bingoComposing=false;
 const gameMeta={ladder:['🪜','사다리 타기'],bingo:['⭕','빙고'],dodge:['💩','똥피하기'],race:['🏎️','레이싱'],timing:['⏱️','타이밍 게임'],gomoku:['⚫','오목']};
@@ -16,7 +16,7 @@ socket.on('room:update',room=>{
   const active=document.activeElement;
   const editingBingo=room.game==='bingo'&&room.phase==='lobby'&&active?.matches?.('[data-bingo-index]');
   if(editingBingo||bingoComposing){
-    if(!bingoDraft) bingoDraft=[...(room.bingo?.myBoard||Array(25).fill(''))];
+    if(!bingoDraft) bingoDraft=[...(room.bingo?.myBoard||Array((room.bingo?.size||5)**2).fill(''))];
     return;
   }
   if(room.game!=='bingo'||room.phase!=='lobby') bingoDraft=null;
@@ -26,15 +26,19 @@ socket.on('player:move',({id,x})=>{if(!state.room)return;const p=state.room.play
 socket.on('dodge:tick',x=>{if(state.room?.game==='dodge'){state.room.dodge={...state.room.dodge,...x};updateDodgeHud();}});
 socket.on('connect',()=>render());
 
-function home(){return `<main class="page"><div class="brand"><h1>인계자 정하기</h1><small>경강 미니게임</small></div><div class="home-grid"><section class="card"><h2>같이 놀 준비됐나요? 🎉</h2><div class="field"><label>닉네임</label><input id="nickname" class="input" maxlength="20" placeholder="닉네임을 입력하세요" value="${esc(state.nickname)}"></div><div class="field"><label>초대코드</label><input id="invite" class="input" maxlength="6" placeholder="참가자만 입력" style="text-transform:uppercase"></div><div class="guide"><b>방장</b> = 닉네임 입력 후 게임 선택<br><b>참가자</b> = 닉네임 입력 후 초대코드에 방장이 보낸 초대코드 입력</div><div class="actions"><button class="btn primary" onclick="createRoom()">선택한 게임 방 만들기</button><button class="btn mint" onclick="joinRoom()">초대코드로 참가하기</button></div></section><section class="card"><h2>게임 선택</h2><div class="games">${Object.entries(gameMeta).map(([k,[e,n]])=>`<button class="game-card ${state.selected===k?'selected':''}" onclick="selectGame('${k}')"><span class="emoji">${e}</span><b>${n}</b><span class="sub">${desc(k)}</span>${k==='gomoku'?'<span class="game-badge">2인용</span>':''}</button>`).join('')}</div><div id="topicWrap" class="field ${state.selected==='bingo'?'':'hidden'}"><label>빙고 주제</label><input id="topic" class="input" maxlength="40" placeholder="예: 우리반 추억, 음식, 여행지" value="${esc(state.topic)}"></div></section></div></main>`}
-function desc(k){return {ladder:'운명을 따라 내려가기',bingo:'나만의 5×5 빙고',dodge:'실시간 생존 게임',race:'스페이스바 연타 대결',timing:'5초에 가장 가깝게 멈추기',gomoku:'두 명이 겨루는 오목'}[k]}
-function selectGame(k){state.selected=k;state.nickname=document.getElementById('nickname')?.value||state.nickname;render()}
-function createRoom(){const nickname=document.getElementById('nickname').value.trim();const topic=document.getElementById('topic')?.value.trim()||'';socket.emit('room:create',{nickname,game:state.selected,topic},r=>{if(!r.ok)toast(r.message,'error');else state.nickname=nickname})}
+function home(){return `<main class="page"><div class="brand"><h1>인계자 정하기</h1><small>경강 미니게임</small></div><div class="home-grid"><section class="card"><h2>같이 놀 준비됐나요? 🎉</h2><div class="field"><label>닉네임</label><input id="nickname" class="input" maxlength="20" placeholder="닉네임을 입력하세요" value="${esc(state.nickname)}"></div><div class="field"><label>초대코드</label><input id="invite" class="input" maxlength="6" placeholder="참가자만 입력" style="text-transform:uppercase"></div><div class="guide"><b>방장</b> = 닉네임 입력 후 게임 선택<br><b>참가자</b> = 닉네임 입력 후 초대코드에 방장이 보낸 초대코드 입력</div><div class="actions"><button class="btn primary" onclick="createRoom()">선택한 게임 방 만들기</button><button class="btn mint" onclick="joinRoom()">초대코드로 참가하기</button></div></section><section class="card"><h2>게임 선택</h2><div class="games">${Object.entries(gameMeta).map(([k,[e,n]])=>`<button class="game-card ${state.selected===k?'selected':''}" onclick="selectGame('${k}')"><span class="emoji">${e}</span><b>${n}</b><span class="sub">${desc(k)}</span>${k==='gomoku'?'<span class="game-badge">2인용</span>':''}</button>`).join('')}</div><div id="topicWrap" class="field ${state.selected==='bingo'?'':'hidden'}"><label>빙고 주제</label><input id="topic" class="input" maxlength="40" placeholder="예: 우리반 추억, 음식, 여행지" value="${esc(state.topic)}"><label>빙고판 크기</label><div class="size-picker">${[5,4,3].map(n=>`<button type="button" class="size-option ${state.bingoSize===n?'selected':''}" onclick="setBingoSize(${n})">${n}×${n}<small>${n*n}칸</small></button>`).join('')}</div></div></section></div></main>`}
+function desc(k){return {ladder:'운명을 따라 내려가기',bingo:'3×3 · 4×4 · 5×5 선택',dodge:'실시간 생존 게임',race:'스페이스바 연타 대결',timing:'5초에 가장 가깝게 멈추기',gomoku:'두 명이 겨루는 오목'}[k]}
+function selectGame(k){state.selected=k;state.nickname=document.getElementById('nickname')?.value||state.nickname;state.topic=document.getElementById('topic')?.value||state.topic;render()}
+function setBingoSize(n){state.nickname=document.getElementById('nickname')?.value||state.nickname;state.topic=document.getElementById('topic')?.value||state.topic;state.bingoSize=[3,4,5].includes(n)?n:5;render()}
+function createRoom(){const nickname=document.getElementById('nickname').value.trim();const topic=document.getElementById('topic')?.value.trim()||'';socket.emit('room:create',{nickname,game:state.selected,topic,bingoSize:state.bingoSize},r=>{if(!r.ok)toast(r.message,'error');else state.nickname=nickname})}
 function joinRoom(){const nickname=document.getElementById('nickname').value.trim(),code=document.getElementById('invite').value.trim().toUpperCase();socket.emit('room:join',{nickname,code},r=>{if(!r.ok)toast(r.message,'error');else state.nickname=nickname})}
 function roomHeader(){const r=state.room;return `<div class="room-top"><div><div class="sub">초대코드</div><div class="code">${r.code}</div></div><div class="players">${r.players.map(p=>`<span class="player-chip ${p.ready?'ready':''} ${p.id===r.hostId?'host':''}">${esc(p.nickname)}${p.ready?' ✓':''}</span>`).join('')}</div><button class="btn danger" onclick="leaveRoom()">방 나가기</button></div>`}
 function render(){if(!state.room){app.innerHTML=home();return}const r=state.room;let body='';if(r.phase==='selecting'&&!host())body=`<div class="overlay"><div><div class="count">🎮</div><h2>방장이 게임을 고르는 중입니다.</h2></div></div>`;if(r.phase==='selecting'&&host())body=chooser();else body+=gameView();app.innerHTML=`<main class="page">${roomHeader()}<section class="card game-shell">${body}</section></main>${countdownOverlay()}`;afterRender()}
 function chooser(){return `<div class="center"><div class="title">다음 게임을 골라주세요</div><div class="games">${Object.entries(gameMeta).map(([k,[e,n]])=>`<button class="game-card" onclick="chooseNext('${k}')"><span class="emoji">${e}</span><b>${n}</b>${k==='gomoku'?'<span class="game-badge">2인용</span>':''}</button>`).join('')}</div></div>`}
-function chooseNext(game){let topic='';if(game==='bingo')topic=prompt('빙고 주제를 입력해주세요.')||'';socket.emit('room:chooseGame',{game,topic})}
+function chooseNext(game){if(game!=='bingo')return socket.emit('room:chooseGame',{game,topic:'',bingoSize:5});openBingoSetup()}
+function openBingoSetup(){const wrap=document.createElement('div');wrap.className='overlay';wrap.id='bingoSetupOverlay';wrap.innerHTML=`<div class="modal-card"><div class="title">⭕ 빙고 설정</div><div class="field"><label>빙고 주제</label><input id="nextBingoTopic" class="input" maxlength="40" placeholder="예: 음식, 여행지, 우리반 추억"></div><div class="field"><label>빙고판 크기</label><div class="size-picker">${[5,4,3].map(n=>`<button type="button" class="size-option ${n===5?'selected':''}" data-next-size="${n}" onclick="pickNextBingoSize(${n})">${n}×${n}<small>${n*n}칸</small></button>`).join('')}</div></div><div class="actions"><button class="btn primary" onclick="confirmNextBingo()">빙고 선택</button><button class="btn danger" onclick="document.getElementById('bingoSetupOverlay').remove()">취소</button></div></div>`;document.body.append(wrap);wrap.dataset.size='5';setTimeout(()=>document.getElementById('nextBingoTopic')?.focus(),0)}
+function pickNextBingoSize(n){const w=document.getElementById('bingoSetupOverlay');if(!w)return;w.dataset.size=String(n);w.querySelectorAll('[data-next-size]').forEach(b=>b.classList.toggle('selected',Number(b.dataset.nextSize)===n))}
+function confirmNextBingo(){const w=document.getElementById('bingoSetupOverlay');const topic=document.getElementById('nextBingoTopic')?.value.trim()||'';const bingoSize=Number(w?.dataset.size)||5;w?.remove();socket.emit('room:chooseGame',{game:'bingo',topic,bingoSize})}
 function gameView(){const r=state.room;return {ladder:ladderView,bingo:bingoView,dodge:dodgeView,race:raceView,timing:timingView,gomoku:gomokuView}[r.game]()}
 function commonEnd(){if(state.room.phase!=='finished')return'';return `<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('game:restart')">게임 다시하기</button>${host()?`<button class="btn mint" onclick="socket.emit('room:selecting')">다른 게임 선택하기</button>`:''}<button class="btn danger" onclick="leaveRoom()">방 나가기</button></div>`}
 function leaveRoom(){socket.emit('room:leave');state.room=null;render()}
@@ -48,18 +52,18 @@ function revealLadder(index){if(host())socket.emit('ladder:reveal',{index})}
 function ladderSvg(l){const n=l.names.length,x=i=>70+i*(860/(n-1));let s='';for(let i=0;i<n;i++)s+=`<line x1="${x(i)}" y1="10" x2="${x(i)}" y2="370" stroke="#8c7aa8" stroke-width="5"/>`;for(const rung of (l.rungs||[]))s+=`<line x1="${x(rung.left)}" y1="${rung.y}" x2="${x(rung.left+1)}" y2="${rung.y}" stroke="#c5b8da" stroke-width="5"/>`;for(const i of l.revealed){const pts=(l.traces?.[i]||[]).map(p=>`${x(p.lane)},${p.y}`).join(' ');s+=`<polyline points="${pts}" fill="none" stroke="${['#ff5d8f','#6c5ce7','#00b894','#ff9f43','#00a8ff'][i%5]}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" pathLength="1000" stroke-dasharray="1000" stroke-dashoffset="1000"><animate attributeName="stroke-dashoffset" from="1000" to="0" dur="2.8s" fill="freeze"/></polyline>`}return s}
 
 function bingoView(){
-  const r=state.room,b=r.bingo,m=me();
-  if(!bingoDraft||bingoDraft.length!==25) bingoDraft=[...(b.myBoard||Array(25).fill(''))];
+  const r=state.room,b=r.bingo,m=me(),size=b.size||r.bingoSize||5,cells=size*size;
+  if(!bingoDraft||bingoDraft.length!==cells) bingoDraft=[...(b.myBoard||Array(cells).fill(''))];
   const board=b.started?b.myBoard:bingoDraft;
   const canClaim=b.started&&!b.claimed&&b.myLines.length>=b.target;
   const rank=b.ranking||[];
-  return `<div class="center"><div class="title">⭕ ${esc(r.topic||'빙고')}</div><p class="sub">${b.started?`${b.target}빙고를 완성한 뒤 닉네임 옆의 빙고 버튼을 누르세요.`:'25칸을 입력한 뒤 준비완료를 눌러주세요. Tab 또는 Enter를 누르면 다음 칸으로 이동합니다.'}</p>${b.started?`<div class="bingo-claim-bar"><b>${esc(m.nickname)}</b><button class="btn bingo-claim ${canClaim?'ready-to-claim':''}" ${canClaim?'':'disabled'} onclick="claimBingo()">빙고!</button><span>${b.myLines.length} / ${b.target}줄</span></div>`:''}</div><div class="bingo-grid">${board.map((v,i)=>b.started?`<button class="bingo-cell ${b.myMarks[i]?'marked':''} ${b.myLines.some(line=>line.includes(i))?'line':''}" onclick="markBingo(${i})"><span>${esc(v)}</span></button>`:`<div class="bingo-cell bingo-input-cell"><input data-bingo-index="${i}" value="${esc(v)}" maxlength="24" autocomplete="off" oninput="bingoInput(event,${i})" onfocus="bingoFocus(${i})" onblur="bingoBlur()" onkeydown="bingoKey(event,${i})" oncompositionstart="bingoComposing=true" oncompositionend="bingoCompositionEnd(event,${i})"></div>`).join('')}</div><div class="actions" style="justify-content:center">${!b.started?`<button class="btn ${m.ready?'danger':'primary'}" onclick="toggleReady()">${m.ready?'준비 취소':'준비완료'}</button>`:''}${host()&&!b.started?`<label class="target-picker">목표 <select id="bingoTarget">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}빙고</option>`).join('')}</select></label><button class="btn mint" onclick="startBingo()">게임 스타트</button>`:''}${host()&&b.started&&rank.length?`<button class="btn primary" onclick="socket.emit('bingo:finish')">결과 화면 보기</button>`:''}</div>${rank.length?`<div class="ranking"><h3>빙고 선언 순위</h3>${rank.map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${i+1}번째 선언</span></div>`).join('')}</div>`:''}${commonEnd()}`;
+  return `<div class="center"><div class="title">⭕ ${esc(r.topic||'빙고')} <span class="board-size-badge">${size}×${size}</span></div><p class="sub">${b.started?`${b.target}빙고를 완성한 뒤 닉네임 옆의 빙고 버튼을 누르세요.`:`${cells}칸을 입력한 뒤 준비완료를 눌러주세요. Tab 또는 Enter를 누르면 다음 칸으로 이동합니다.`}</p>${b.started?`<div class="bingo-claim-bar"><b>${esc(m.nickname)}</b><button class="btn bingo-claim ${canClaim?'ready-to-claim':''}" ${canClaim?'':'disabled'} onclick="claimBingo()">빙고!</button><span>${b.myLines.length} / ${b.target}줄</span></div>`:''}</div><div class="bingo-grid" style="--bingo-size:${size}">${board.map((v,i)=>b.started?`<button class="bingo-cell ${b.myMarks[i]?'marked':''} ${b.myLines.some(line=>line.includes(i))?'line':''}" onclick="markBingo(${i})"><span>${esc(v)}</span></button>`:`<div class="bingo-cell bingo-input-cell"><input data-bingo-index="${i}" value="${esc(v)}" maxlength="24" autocomplete="off" oninput="bingoInput(event,${i})" onfocus="bingoFocus(${i})" onblur="bingoBlur()" onkeydown="bingoKey(event,${i})" oncompositionstart="bingoComposing=true" oncompositionend="bingoCompositionEnd(event,${i})"></div>`).join('')}</div><div class="actions" style="justify-content:center">${!b.started?`<button class="btn ${m.ready?'danger':'primary'}" onclick="toggleReady()">${m.ready?'준비 취소':'준비완료'}</button>`:''}${host()&&!b.started?`<label class="target-picker">목표 <select id="bingoTarget">${Array.from({length:Math.min(5,size*2+2)},(_,i)=>i+1).map(n=>`<option value="${n}">${n}빙고</option>`).join('')}</select></label><button class="btn mint" onclick="startBingo()">게임 스타트</button>`:''}${host()&&b.started&&rank.length?`<button class="btn primary" onclick="socket.emit('bingo:finish')">결과 화면 보기</button>`:''}</div>${rank.length?`<div class="ranking"><h3>빙고 선언 순위</h3>${rank.map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${i+1}번째 선언</span></div>`).join('')}</div>`:''}${commonEnd()}`;
 }
 function bingoFocus(i){
-  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array(25).fill(''))];
+  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array((state.room?.bingo?.size||5)**2).fill(''))];
 }
 function bingoInput(e,i){
-  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array(25).fill(''))];
+  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array((state.room?.bingo?.size||5)**2).fill(''))];
   bingoDraft[i]=e.target.value;
 }
 function bingoCompositionEnd(e,i){
@@ -67,7 +71,7 @@ function bingoCompositionEnd(e,i){
   bingoInput(e,i);
 }
 function saveBingoNow(){
-  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array(25).fill(''))];
+  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array((state.room?.bingo?.size||5)**2).fill(''))];
   socket.emit('bingo:save',[...bingoDraft]);
 }
 function bingoBlur(){
@@ -78,10 +82,12 @@ function bingoKey(e,i){
   let next=null;
   if(e.key==='Tab'){
     e.preventDefault();
-    next=e.shiftKey?Math.max(0,i-1):Math.min(24,i+1);
+    const last=(state.room?.bingo?.size||5)**2-1;
+    next=e.shiftKey?Math.max(0,i-1):Math.min(last,i+1);
   }else if(e.key==='Enter'){
     e.preventDefault();
-    next=Math.min(24,i+1);
+    const last=(state.room?.bingo?.size||5)**2-1;
+    next=Math.min(last,i+1);
   }
   if(next!==null){
     bingoInput({target:e.currentTarget},i);
