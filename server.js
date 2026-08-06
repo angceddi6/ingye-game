@@ -15,7 +15,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['ladder','bingo','dodge','race','gomoku']);
+const GAMES = new Set(['ladder','bingo','dodge','race','timing','gomoku']);
 
 const makeCode = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -48,6 +48,7 @@ const roomView = (room, viewerId) => ({
   } : null,
   dodge: room.dodge,
   race: room.race,
+  timing: room.timing,
   gomoku: room.gomoku
 });
 const emitRoom = room => {
@@ -73,6 +74,7 @@ const createRoom = (socket, nickname, game, topic='') => {
     bingoBoards:new Map(),bingoMarks:new Map(),bingoLines:new Map(),bingoTarget:1,bingoRanking:[],
     dodge:{startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]},
     race:{startedAt:null,ranking:[]},
+    timing:{startedAt:null,targetMs:5000,submissions:[],ranking:[]},
     gomoku:{board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null},
     timers:[],timeouts:[]};
   rooms.set(code,room); socket.join(code); socket.data.roomCode=code; return room;
@@ -109,16 +111,18 @@ io.on('connection', socket => {
     room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};
     room.bingoBoards=new Map();room.bingoMarks=new Map();room.bingoLines=new Map();room.bingoTarget=1;room.bingoRanking=[];
     for(const p of room.players.values()){room.bingoBoards.set(p.id,Array(25).fill(''));room.bingoMarks.set(p.id,Array(25).fill(false));room.bingoLines.set(p.id,[]);}
-    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};
+    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:5000,submissions:[],ranking:[]};
     room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null}; assignGomoku(room); emitRoom(room);
   });
   socket.on('room:selecting', () => { const room=getRoom(socket); if(isHost(room,socket)){room.phase='selecting';emitRoom(room);} });
   socket.on('game:restart', () => { const room=getRoom(socket); if(!isHost(room,socket)) return; restartGame(room); emitRoom(room); });
 
-  socket.on('ladder:setup', ({names,results}) => {
+  socket.on('ladder:setup', ({results}) => {
     const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='ladder'||room.phase==='playing') return;
-    names=(names||[]).map(x=>clean(x)).filter(Boolean).slice(0,10); results=(results||[]).map(x=>clean(x)).filter(Boolean).slice(0,10);
-    if(names.length<2||names.length!==results.length) return reject(socket,'참가자와 결과는 같은 개수로 2개 이상 입력해주세요.');
+    const names=[...room.players.values()].map(p=>p.nickname);
+    results=(results||[]).map(x=>clean(x)).filter(Boolean).slice(0,10);
+    if(names.length<2) return reject(socket,'사다리 타기는 참가자가 2명 이상이어야 합니다.');
+    if(names.length!==results.length) return reject(socket,`결과를 참가자 수(${names.length}명)와 같게 입력해주세요.`);
     const n=names.length;
     const rungs=[];
     const rows=Math.max(9,Math.min(14,n+7));
@@ -171,6 +175,18 @@ io.on('connection', socket => {
   socket.on('race:start', () => startCountdown(socket,'race'));
   socket.on('race:tap', () => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='race'||room.phase!=='playing'||p.finishedAt)return; p.progress=Math.min(100,p.progress+1.8); if(p.progress>=100){p.finishedAt=Date.now();room.race.ranking.push({id:p.id,nickname:p.nickname,time:p.finishedAt-room.race.startedAt}); if(room.race.ranking.length===room.players.size)room.phase='finished';} emitRoom(room); });
 
+  socket.on('timing:start', () => startCountdown(socket,'timing'));
+  socket.on('timing:stop', () => {
+    const room=getRoom(socket); const p=room?.players.get(socket.id);
+    if(!room||room.game!=='timing'||room.phase!=='playing'||!p||room.timing.submissions.some(x=>x.id===socket.id))return;
+    const elapsed=Math.max(0,Date.now()-room.timing.startedAt);
+    const diff=Math.abs(elapsed-room.timing.targetMs);
+    room.timing.submissions.push({id:p.id,nickname:p.nickname,time:elapsed,diff});
+    room.timing.ranking=[...room.timing.submissions].sort((a,b)=>a.diff-b.diff||a.time-b.time);
+    if(room.timing.submissions.length>=room.players.size)room.phase='finished';
+    emitRoom(room);
+  });
+
   socket.on('gomoku:place', ({r,c}) => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='gomoku'||room.phase==='finished'||room.players.size!==2||!p?.stone)return; if(room.phase==='lobby')room.phase='playing'; if(p.stone!==room.gomoku.turn||room.gomoku.board[r]?.[c])return; room.gomoku.board[r][c]=p.stone; const line=findWin(room.gomoku.board,r,c,p.stone); if(line){room.gomoku.winner=p.nickname;room.gomoku.winLine=line;room.phase='finished';} else room.gomoku.turn=p.stone==='black'?'white':'black'; emitRoom(room); });
 
   socket.on('disconnect', () => leaveRoom(socket));
@@ -178,8 +194,8 @@ io.on('connection', socket => {
 
 function assignGomoku(room){ if(room.game!=='gomoku')return; let i=0;for(const p of room.players.values())p.stone=i++===0?'black':i===2?'white':null; }
 function calcBingoLines(m){const lines=[];for(let r=0;r<5;r++){const a=[0,1,2,3,4].map(c=>r*5+c);if(a.every(i=>m[i]))lines.push(a);}for(let c=0;c<5;c++){const a=[0,1,2,3,4].map(r=>r*5+c);if(a.every(i=>m[i]))lines.push(a);}const d1=[0,6,12,18,24],d2=[4,8,12,16,20];if(d1.every(i=>m[i]))lines.push(d1);if(d2.every(i=>m[i]))lines.push(d2);return lines;}
-function startCountdown(socket,game){const room=getRoom(socket);if(!isHost(room,socket)||room.game!==game||room.phase!=='lobby')return;if(game==='dodge'&&room.players.size<1)return;if(game==='race'&&room.players.size<1)return;room.phase='countdown';emitRoom(room);room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code))return;room.phase='playing';resetPlayerStates(room);const now=Date.now();if(game==='dodge'){room.dodge={startedAt:now,drops:[],speedLevel:2,countLevel:3,ranking:[]};room.timers.push(setInterval(()=>{if(room.phase!=='playing')return;const elapsed=Date.now()-now;room.dodge.speedLevel=2+Math.floor(elapsed/5000);room.dodge.countLevel=3+Math.floor(elapsed/10000);io.to(room.code).emit('dodge:tick',{elapsed,speedLevel:room.dodge.speedLevel,countLevel:room.dodge.countLevel});},500));}else room.race={startedAt:now,ranking:[]};emitRoom(room);},3500));}
-function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){room.bingoBoards.set(p.id,Array(25).fill(''));room.bingoMarks.set(p.id,Array(25).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
+function startCountdown(socket,game){const room=getRoom(socket);if(!isHost(room,socket)||room.game!==game||room.phase!=='lobby')return;if(game==='dodge'&&room.players.size<1)return;if(game==='race'&&room.players.size<1)return;if(game==='timing'&&room.players.size<1)return;room.phase='countdown';emitRoom(room);room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code))return;room.phase='playing';resetPlayerStates(room);const now=Date.now();if(game==='dodge'){room.dodge={startedAt:now,drops:[],speedLevel:2,countLevel:3,ranking:[]};room.timers.push(setInterval(()=>{if(room.phase!=='playing')return;const elapsed=Date.now()-now;room.dodge.speedLevel=2+Math.floor(elapsed/5000);room.dodge.countLevel=3+Math.floor(elapsed/10000);io.to(room.code).emit('dodge:tick',{elapsed,speedLevel:room.dodge.speedLevel,countLevel:room.dodge.countLevel});},500));}else if(game==='race') room.race={startedAt:now,ranking:[]};else if(game==='timing') room.timing={startedAt:now,targetMs:5000,submissions:[],ranking:[]};emitRoom(room);},3500));}
+function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){room.bingoBoards.set(p.id,Array(25).fill(''));room.bingoMarks.set(p.id,Array(25).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:5000,submissions:[],ranking:[]};if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
 function findWin(board,r,c,s){const dirs=[[1,0],[0,1],[1,1],[1,-1]];for(const[dr,dc]of dirs){const line=[[r,c]];for(const sign of[-1,1])for(let k=1;k<5;k++){const rr=r+dr*k*sign,cc=c+dc*k*sign;if(board[rr]?.[cc]===s)line.push([rr,cc]);else break;}if(line.length>=5)return line;}return null;}
 function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);emitRoom(room);}
 server.listen(PORT,()=>console.log(`Server running on ${PORT}`));
