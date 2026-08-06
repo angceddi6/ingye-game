@@ -1,6 +1,8 @@
 const socket=io();
 const app=document.getElementById('app');
-let state={room:null,nickname:'',selected:'ladder',topic:'',countdown:null,dodgeX:50,dodgeTimer:0,dodgeSpawner:null,keys:{},raceKeyDown:false,bingoDraft:null};
+let state={room:null,nickname:'',selected:'ladder',topic:'',countdown:null,dodgeX:50,dodgeTimer:0,dodgeSpawner:null,keys:{},raceKeyDown:false};
+let bingoDraft=null;
+let bingoComposing=false;
 const gameMeta={ladder:['🪜','사다리 타기'],bingo:['⭕','빙고'],dodge:['💩','똥피하기'],race:['🏎️','레이싱'],gomoku:['⚫','오목']};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
 const me=()=>state.room?.players.find(p=>p.id===socket.id);
@@ -9,21 +11,16 @@ const toast=(message,type='')=>{const d=document.createElement('div');d.classNam
 
 socket.on('toast',x=>toast(x.message,x.type));
 socket.on('room:update',room=>{
-  const active=document.activeElement;
-  const bingoIndex=active?.dataset?.bingoIndex;
-  const caret=typeof active?.selectionStart==='number'?active.selectionStart:null;
-  if(state.room?.game==='bingo'&&state.room?.phase==='lobby') syncBingoDraftFromDom();
   state.room=room;
-  if(room.game==='bingo'&&room.phase==='lobby'){
-    if(!Array.isArray(state.bingoDraft)) state.bingoDraft=[...(room.bingo?.myBoard||Array(25).fill(''))];
-    room.bingo.myBoard=[...state.bingoDraft];
-  } else state.bingoDraft=null;
   if(room.phase!=='playing') stopDodgeLocal();
-  render();
-  if(bingoIndex!==undefined){
-    const next=document.querySelector(`[data-bingo-index="${bingoIndex}"]`);
-    if(next){next.focus();if(caret!==null)next.setSelectionRange(caret,caret);}
+  const active=document.activeElement;
+  const editingBingo=room.game==='bingo'&&room.phase==='lobby'&&active?.matches?.('[data-bingo-index]');
+  if(editingBingo||bingoComposing){
+    if(!bingoDraft) bingoDraft=[...(room.bingo?.myBoard||Array(25).fill(''))];
+    return;
   }
+  if(room.game!=='bingo'||room.phase!=='lobby') bingoDraft=null;
+  render();
 });
 socket.on('player:move',({id,x})=>{if(!state.room)return;const p=state.room.players.find(q=>q.id===id);if(p){p.x=x;const el=document.querySelector(`[data-player="${id}"]`);if(el)el.style.left=x+'%';}});
 socket.on('dodge:tick',x=>{if(state.room?.game==='dodge'){state.room.dodge={...state.room.dodge,...x};updateDodgeHud();}});
@@ -50,23 +47,56 @@ function setupLadder(){const names=document.getElementById('ladderNames').value.
 function revealLadder(index){if(host())socket.emit('ladder:reveal',{index})}
 function ladderSvg(l){const n=l.names.length,x=i=>70+i*(860/(n-1));let s='';for(let i=0;i<n;i++)s+=`<line x1="${x(i)}" y1="10" x2="${x(i)}" y2="370" stroke="#8c7aa8" stroke-width="5"/>`;for(const rung of (l.rungs||[]))s+=`<line x1="${x(rung.left)}" y1="${rung.y}" x2="${x(rung.left+1)}" y2="${rung.y}" stroke="#c5b8da" stroke-width="5"/>`;for(const i of l.revealed){const pts=(l.traces?.[i]||[]).map(p=>`${x(p.lane)},${p.y}`).join(' ');s+=`<polyline points="${pts}" fill="none" stroke="${['#ff5d8f','#6c5ce7','#00b894','#ff9f43','#00a8ff'][i%5]}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" pathLength="1000" stroke-dasharray="1000" stroke-dashoffset="1000"><animate attributeName="stroke-dashoffset" from="1000" to="0" dur="2.8s" fill="freeze"/></polyline>`}return s}
 
-function bingoView(){const r=state.room,b=r.bingo,m=me();const canClaim=b.started&&!b.claimed&&b.myLines.length>=b.target;const rank=b.ranking||[];const board=!b.started&&Array.isArray(state.bingoDraft)?state.bingoDraft:b.myBoard;return `<div class="center"><div class="title">⭕ ${esc(r.topic||'빙고')}</div><p class="sub">${b.started?`${b.target}빙고를 완성한 뒤 닉네임 옆의 빙고 버튼을 누르세요.`:'25칸을 입력한 뒤 준비완료를 눌러주세요. Tab 또는 Enter를 누르면 다음 칸으로 이동합니다.'}</p>${b.started?`<div class="bingo-claim-bar"><b>${esc(m.nickname)}</b><button class="btn bingo-claim ${canClaim?'ready-to-claim':''}" ${canClaim?'':'disabled'} onclick="claimBingo()">빙고!</button><span>${b.myLines.length} / ${b.target}줄</span></div>`:''}</div><div class="bingo-grid">${board.map((v,i)=>b.started?`<button type="button" class="bingo-cell ${b.myMarks[i]?'marked':''} ${b.myLines.some(line=>line.includes(i))?'line':''}" onclick="markBingo(${i})"><span>${esc(v)}</span></button>`:`<div class="bingo-cell bingo-edit-cell"><input type="text" autocomplete="off" data-bingo-index="${i}" value="${esc(v)}" maxlength="24" oninput="bingoInput(event,${i})" onkeydown="bingoKey(event,${i})"></div>`).join('')}</div><div class="actions" style="justify-content:center">${!b.started?`<button class="btn ${m.ready?'danger':'primary'}" onclick="toggleReady()">${m.ready?'준비 취소':'준비완료'}</button>`:''}${host()&&!b.started?`<label class="target-picker">목표 <select id="bingoTarget">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}빙고</option>`).join('')}</select></label><button class="btn mint" onclick="startBingo()">게임 스타트</button>`:''}${host()&&b.started&&rank.length?`<button class="btn primary" onclick="socket.emit('bingo:finish')">결과 화면 보기</button>`:''}</div>${rank.length?`<div class="ranking"><h3>빙고 선언 순위</h3>${rank.map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${i+1}번째 선언</span></div>`).join('')}</div>`:''}${commonEnd()}`}
-let bingoDebounce;
-function ensureBingoDraft(){if(!Array.isArray(state.bingoDraft))state.bingoDraft=[...(state.room?.bingo?.myBoard||Array(25).fill(''))];return state.bingoDraft}
-function syncBingoDraftFromDom(){const inputs=[...document.querySelectorAll('[data-bingo-index]')];if(!inputs.length)return;const draft=ensureBingoDraft();for(const input of inputs)draft[Number(input.dataset.bingoIndex)]=input.value}
-function bingoInput(e,i){const draft=ensureBingoDraft();draft[i]=e.target.value;saveBingo()}
-function emitBingoNow(){clearTimeout(bingoDebounce);syncBingoDraftFromDom();socket.emit('bingo:save',[...ensureBingoDraft()])}
-function saveBingo(){clearTimeout(bingoDebounce);bingoDebounce=setTimeout(emitBingoNow,450)}
+function bingoView(){
+  const r=state.room,b=r.bingo,m=me();
+  if(!bingoDraft||bingoDraft.length!==25) bingoDraft=[...(b.myBoard||Array(25).fill(''))];
+  const board=b.started?b.myBoard:bingoDraft;
+  const canClaim=b.started&&!b.claimed&&b.myLines.length>=b.target;
+  const rank=b.ranking||[];
+  return `<div class="center"><div class="title">⭕ ${esc(r.topic||'빙고')}</div><p class="sub">${b.started?`${b.target}빙고를 완성한 뒤 닉네임 옆의 빙고 버튼을 누르세요.`:'25칸을 입력한 뒤 준비완료를 눌러주세요. Tab 또는 Enter를 누르면 다음 칸으로 이동합니다.'}</p>${b.started?`<div class="bingo-claim-bar"><b>${esc(m.nickname)}</b><button class="btn bingo-claim ${canClaim?'ready-to-claim':''}" ${canClaim?'':'disabled'} onclick="claimBingo()">빙고!</button><span>${b.myLines.length} / ${b.target}줄</span></div>`:''}</div><div class="bingo-grid">${board.map((v,i)=>b.started?`<button class="bingo-cell ${b.myMarks[i]?'marked':''} ${b.myLines.some(line=>line.includes(i))?'line':''}" onclick="markBingo(${i})"><span>${esc(v)}</span></button>`:`<div class="bingo-cell bingo-input-cell"><input data-bingo-index="${i}" value="${esc(v)}" maxlength="24" autocomplete="off" oninput="bingoInput(event,${i})" onfocus="bingoFocus(${i})" onblur="bingoBlur()" onkeydown="bingoKey(event,${i})" oncompositionstart="bingoComposing=true" oncompositionend="bingoCompositionEnd(event,${i})"></div>`).join('')}</div><div class="actions" style="justify-content:center">${!b.started?`<button class="btn ${m.ready?'danger':'primary'}" onclick="toggleReady()">${m.ready?'준비 취소':'준비완료'}</button>`:''}${host()&&!b.started?`<label class="target-picker">목표 <select id="bingoTarget">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}빙고</option>`).join('')}</select></label><button class="btn mint" onclick="startBingo()">게임 스타트</button>`:''}${host()&&b.started&&rank.length?`<button class="btn primary" onclick="socket.emit('bingo:finish')">결과 화면 보기</button>`:''}</div>${rank.length?`<div class="ranking"><h3>빙고 선언 순위</h3>${rank.map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${i+1}번째 선언</span></div>`).join('')}</div>`:''}${commonEnd()}`;
+}
+function bingoFocus(i){
+  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array(25).fill(''))];
+}
+function bingoInput(e,i){
+  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array(25).fill(''))];
+  bingoDraft[i]=e.target.value;
+}
+function bingoCompositionEnd(e,i){
+  bingoComposing=false;
+  bingoInput(e,i);
+}
+function saveBingoNow(){
+  if(!bingoDraft) bingoDraft=[...(state.room?.bingo?.myBoard||Array(25).fill(''))];
+  socket.emit('bingo:save',[...bingoDraft]);
+}
+function bingoBlur(){
+  if(!bingoComposing) saveBingoNow();
+}
 function bingoKey(e,i){
-  if(e.key==='Tab'&&!e.shiftKey){
-    if(i<24){e.preventDefault();ensureBingoDraft()[i]=e.currentTarget.value;emitBingoNow();document.querySelector(`[data-bingo-index="${i+1}"]`)?.focus();}
+  if(bingoComposing||e.isComposing||e.keyCode===229) return;
+  let next=null;
+  if(e.key==='Tab'){
+    e.preventDefault();
+    next=e.shiftKey?Math.max(0,i-1):Math.min(24,i+1);
   }else if(e.key==='Enter'){
-    e.preventDefault();ensureBingoDraft()[i]=e.currentTarget.value;emitBingoNow();if(i<24)document.querySelector(`[data-bingo-index="${i+1}"]`)?.focus();
+    e.preventDefault();
+    next=Math.min(24,i+1);
+  }
+  if(next!==null){
+    bingoInput({target:e.currentTarget},i);
+    saveBingoNow();
+    requestAnimationFrame(()=>{
+      const el=document.querySelector(`[data-bingo-index="${next}"]`);
+      el?.focus();
+      el?.select();
+    });
   }
 }
-function startBingo(){socket.emit('bingo:start',{target:Number(document.getElementById('bingoTarget')?.value)||1})}
+function startBingo(){saveBingoNow();setTimeout(()=>socket.emit('bingo:start',{target:Number(document.getElementById('bingoTarget')?.value)||1}),80)}
 function claimBingo(){socket.emit('bingo:claim')}
-function toggleReady(){emitBingoNow();setTimeout(()=>socket.emit('bingo:ready',!me().ready),120)}function markBingo(i){if(state.room.bingo.started)socket.emit('bingo:mark',i)}
+function toggleReady(){saveBingoNow();setTimeout(()=>socket.emit('bingo:ready',!me().ready),100)}
+function markBingo(i){if(state.room.bingo.started)socket.emit('bingo:mark',i)}
 
 function dodgeView(){const r=state.room,d=r.dodge;return `<div class="center"><div class="title">💩 똥피하기</div><p class="sub">방향키 ← → 로 이동하세요. 다른 참가자는 반투명하게 보입니다.</p></div>${r.phase==='lobby'&&host()?`<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('dodge:start')">게임 시작</button></div>`:''}<div class="arena" id="arena"><div class="hud"><span id="dodgeTime">생존 0.0초</span><span id="dodgeLevel">속도 2단계 · 개수 3단계</span></div>${r.players.map(p=>`<div class="person ${p.id!==socket.id?'other':''}" data-player="${p.id}" style="left:${p.x}%;background:${p.color}">👤<br>${esc(p.nickname)}${p.alive?'':'<br>OUT'}</div>`).join('')}</div>${r.phase==='finished'?ranking(d.ranking,'time'):''}${commonEnd()}`}
 function startDodgeLocal(){if(state.dodgeSpawner||!me()?.alive)return;state.dodgeX=me().x;document.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();state.keys[e.key]=true}};document.onkeyup=e=>state.keys[e.key]=false;state.dodgeTimer=requestAnimationFrame(dodgeLoop);spawnPoop();}
