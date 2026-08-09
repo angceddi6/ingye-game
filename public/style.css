@@ -6,3 +6,18 @@
 .game-card{position:relative}.game-badge{position:absolute;top:12px;right:12px;padding:5px 9px;border-radius:999px;background:#2f2940;color:#fff;font-size:11px;font-weight:900}.auto-names{display:flex;flex-wrap:wrap;gap:8px;min-height:54px;padding:10px;border:2px solid #ece8f4;border-radius:16px;background:#faf9ff}.timing-stage{width:min(680px,100%);min-height:360px;margin:20px auto;padding:38px 22px;border-radius:28px;background:radial-gradient(circle at 50% 20%,#fff7d9,#fff 58%);border:3px solid #fff;box-shadow:inset 0 0 0 2px #f3e9bf,0 18px 45px #8c6f2a1f;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:18px}.timing-target{font-size:clamp(52px,10vw,96px);font-weight:950;letter-spacing:-4px;color:#2f2940}.timing-stop{width:min(300px,78vw);aspect-ratio:1;border-radius:50%;background:linear-gradient(145deg,#ff7a9f,#ffae64);color:white;font-size:clamp(28px,6vw,48px);font-weight:950;box-shadow:0 18px 0 #d85678,0 28px 45px #ff9ab455;transition:.12s}.timing-stop:hover{transform:translateY(-3px)}.timing-stop:active{transform:translateY(12px);box-shadow:0 6px 0 #d85678,0 12px 25px #ff9ab444}.timing-stop.done{background:#c8c3d5;box-shadow:0 12px 0 #9c96aa;color:#fff;cursor:default}.timing-progress{font-weight:900;color:#716b7d;background:#f4f1fa;padding:9px 15px;border-radius:999px}
 
 .size-picker{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.size-option{padding:14px;border:2px solid #ece8f4;border-radius:16px;background:#fff;font-weight:950;color:var(--ink)}.size-option small{display:block;margin-top:4px;color:var(--muted);font-weight:700}.size-option:hover,.size-option.selected{border-color:#8067ff;background:#f2efff;box-shadow:0 8px 20px #ded8ff}.board-size-badge{display:inline-block;font-size:13px;padding:6px 9px;border-radius:999px;background:#eeeaff;color:#674ddd;vertical-align:middle;letter-spacing:0}
+
+/* Dodge collision + spectator mode */
+.person{background:var(--person-color)!important;display:block;padding:0;overflow:visible}
+.person-icon{position:absolute;top:2px;left:50%;transform:translateX(-50%);font-size:34px;line-height:38px;z-index:2;filter:drop-shadow(0 2px 2px #0002)}
+.person-name{position:absolute;left:50%;bottom:5px;transform:translateX(-50%);width:92px;text-align:center;font-size:10px;font-weight:950;white-space:nowrap;text-shadow:0 1px 2px #0008;z-index:2}
+.person-hitbox{position:absolute;width:24px;height:34px;left:50%;top:5px;transform:translateX(-50%);border-radius:45% 45% 35% 35%;pointer-events:none}
+.person.dead{opacity:.20!important;filter:grayscale(.85)}
+.person.spectated{opacity:1!important;z-index:6;outline:4px solid #ffcf4d;outline-offset:5px;box-shadow:0 0 0 8px #fff8,0 10px 28px #0003}
+.person.spectator-dim{opacity:.18!important}
+.poop{width:34px;height:34px;display:block;text-align:center;line-height:34px;transform:translateX(-50%);z-index:4}
+.poop-emoji{font-size:31px;line-height:34px;position:relative;z-index:2}
+.poop-hitbox{position:absolute;width:18px;height:18px;left:8px;top:8px;border-radius:50%;pointer-events:none}
+.spectator-panel{width:min(760px,100%);margin:12px auto 16px;padding:14px 16px;border-radius:20px;background:#2f2940;color:white;display:flex;flex-direction:column;gap:10px;text-align:center;box-shadow:0 12px 30px #2f294033}
+.spectator-panel>b{font-size:20px}.spectator-panel strong{color:#ffd166}.spectator-buttons{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.spectator-buttons .btn{padding:9px 13px}
+.arena.spectator-mode{box-shadow:0 0 0 4px #ffd16655,0 18px 45px #0001}

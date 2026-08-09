@@ -1,6 +1,6 @@
 const socket=io();
 const app=document.getElementById('app');
-let state={room:null,nickname:'',selected:'ladder',topic:'',bingoSize:5,countdown:null,dodgeX:50,dodgeTimer:0,dodgeSpawner:null,keys:{},raceKeyDown:false,timingKeyDown:false};
+let state={room:null,nickname:'',selected:'ladder',topic:'',bingoSize:5,countdown:null,dodgeX:50,dodgeTimer:0,keys:{},spectateId:null,raceKeyDown:false,timingKeyDown:false};
 let bingoDraft=null;
 let bingoComposing=false;
 const gameMeta={ladder:['🪜','사다리 타기'],bingo:['⭕','빙고'],dodge:['💩','똥피하기'],race:['🏎️','레이싱'],timing:['⏱️','타이밍 게임'],gomoku:['⚫','오목']};
@@ -12,7 +12,7 @@ const toast=(message,type='')=>{const d=document.createElement('div');d.classNam
 socket.on('toast',x=>toast(x.message,x.type));
 socket.on('room:update',room=>{
   state.room=room;
-  if(room.phase!=='playing') stopDodgeLocal();
+  if(room.phase!=='playing') stopDodgeLocal(true);
   const active=document.activeElement;
   const editingBingo=room.game==='bingo'&&room.phase==='lobby'&&active?.matches?.('[data-bingo-index]');
   if(editingBingo||bingoComposing){
@@ -24,6 +24,7 @@ socket.on('room:update',room=>{
 });
 socket.on('player:move',({id,x})=>{if(!state.room)return;const p=state.room.players.find(q=>q.id===id);if(p){p.x=x;const el=document.querySelector(`[data-player="${id}"]`);if(el)el.style.left=x+'%';}});
 socket.on('dodge:tick',x=>{if(state.room?.game==='dodge'){state.room.dodge={...state.room.dodge,...x};updateDodgeHud();}});
+socket.on('dodge:drops',drops=>{if(state.room?.game!=='dodge'||state.room.phase!=='playing')return;state.room.dodge.drops=[...(state.room.dodge.drops||[]),...drops].filter(d=>Date.now()-d.bornAt<d.duration+300);drops.forEach(addPoopElement);});
 socket.on('connect',()=>render());
 
 function home(){return `<main class="page"><div class="brand"><h1>인계자 정하기</h1><small>경강 미니게임</small></div><div class="home-grid"><section class="card"><h2>같이 놀 준비됐나요? 🎉</h2><div class="field"><label>닉네임</label><input id="nickname" class="input" maxlength="20" placeholder="닉네임을 입력하세요" value="${esc(state.nickname)}"></div><div class="field"><label>초대코드</label><input id="invite" class="input" maxlength="6" placeholder="참가자만 입력" style="text-transform:uppercase"></div><div class="guide"><b>방장</b> = 닉네임 입력 후 게임 선택<br><b>참가자</b> = 닉네임 입력 후 초대코드에 방장이 보낸 초대코드 입력</div><div class="actions"><button class="btn primary" onclick="createRoom()">선택한 게임 방 만들기</button><button class="btn mint" onclick="joinRoom()">초대코드로 참가하기</button></div></section><section class="card"><h2>게임 선택</h2><div class="games">${Object.entries(gameMeta).map(([k,[e,n]])=>`<button class="game-card ${state.selected===k?'selected':''}" onclick="selectGame('${k}')"><span class="emoji">${e}</span><b>${n}</b><span class="sub">${desc(k)}</span>${k==='gomoku'?'<span class="game-badge">2인용</span>':''}</button>`).join('')}</div><div id="topicWrap" class="field ${state.selected==='bingo'?'':'hidden'}"><label>빙고 주제</label><input id="topic" class="input" maxlength="40" placeholder="예: 우리반 추억, 음식, 여행지" value="${esc(state.topic)}"><label>빙고판 크기</label><div class="size-picker">${[5,4,3].map(n=>`<button type="button" class="size-option ${state.bingoSize===n?'selected':''}" onclick="setBingoSize(${n})">${n}×${n}<small>${n*n}칸</small></button>`).join('')}</div></div></section></div></main>`}
@@ -104,13 +105,30 @@ function claimBingo(){socket.emit('bingo:claim')}
 function toggleReady(){saveBingoNow();setTimeout(()=>socket.emit('bingo:ready',!me().ready),100)}
 function markBingo(i){if(state.room.bingo.started)socket.emit('bingo:mark',i)}
 
-function dodgeView(){const r=state.room,d=r.dodge;return `<div class="center"><div class="title">💩 똥피하기</div><p class="sub">방향키 ← → 로 이동하세요. 다른 참가자는 반투명하게 보입니다.</p></div>${r.phase==='lobby'&&host()?`<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('dodge:start')">게임 시작</button></div>`:''}<div class="arena" id="arena"><div class="hud"><span id="dodgeTime">생존 0.0초</span><span id="dodgeLevel">속도 2단계 · 개수 3단계</span></div>${r.players.map(p=>`<div class="person ${p.id!==socket.id?'other':''}" data-player="${p.id}" style="left:${p.x}%;background:${p.color}">👤<br>${esc(p.nickname)}${p.alive?'':'<br>OUT'}</div>`).join('')}</div>${r.phase==='finished'?ranking(d.ranking,'time'):''}${commonEnd()}`}
-function startDodgeLocal(){if(state.dodgeSpawner||!me()?.alive)return;state.dodgeX=me().x;document.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();state.keys[e.key]=true}};document.onkeyup=e=>state.keys[e.key]=false;state.dodgeTimer=requestAnimationFrame(dodgeLoop);spawnPoop();}
-function stopDodgeLocal(){cancelAnimationFrame(state.dodgeTimer);clearTimeout(state.dodgeSpawner);state.dodgeSpawner=null;document.onkeydown=null;document.onkeyup=null;document.querySelectorAll('.poop').forEach(x=>x.remove())}
-function dodgeLoop(){if(state.room?.phase!=='playing'||!me()?.alive)return stopDodgeLocal();if(state.keys.ArrowLeft)state.dodgeX-=.75;if(state.keys.ArrowRight)state.dodgeX+=.75;state.dodgeX=Math.max(3,Math.min(97,state.dodgeX));const el=document.querySelector(`[data-player="${socket.id}"]`);if(el)el.style.left=state.dodgeX+'%';socket.emit('dodge:move',state.dodgeX);checkPoopCollision();updateDodgeHud();state.dodgeTimer=requestAnimationFrame(dodgeLoop)}
-function spawnPoop(){if(state.room?.phase!=='playing'||!me()?.alive)return stopDodgeLocal();const arena=document.getElementById('arena');if(!arena)return;const level=state.room.dodge?.countLevel||3;for(let i=0;i<level;i++){const p=document.createElement('div');p.className='poop';p.textContent='💩';p.style.left=(2+Math.random()*94)+'%';p.style.top='-40px';p.style.animationDuration=Math.max(.75,2.75-(state.room.dodge?.speedLevel||2)*.22)+'s';arena.append(p);setTimeout(()=>p.remove(),4000)}state.dodgeSpawner=setTimeout(spawnPoop,Math.max(170,720-level*65))}
-function checkPoopCollision(){const meEl=document.querySelector(`[data-player="${socket.id}"]`);if(!meEl)return;const a=meEl.getBoundingClientRect();for(const p of document.querySelectorAll('.poop')){const b=p.getBoundingClientRect();if(a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top){socket.emit('dodge:hit');break}}}
-function updateDodgeHud(){const d=state.room?.dodge;if(!d)return;const t=document.getElementById('dodgeTime'),l=document.getElementById('dodgeLevel');if(t&&d.startedAt)t.textContent='생존 '+((Date.now()-d.startedAt)/1000).toFixed(1)+'초';if(l)l.textContent=`속도 ${d.speedLevel||1}단계 · 개수 ${d.countLevel||1}단계`}
+function dodgeView(){
+  const r=state.room,d=r.dodge,m=me();
+  const alive=r.players.filter(p=>p.alive);
+  if(r.phase==='playing'&&m&&!m.alive){
+    if(!alive.some(p=>p.id===state.spectateId)) state.spectateId=alive[0]?.id||null;
+  } else if(m?.alive) state.spectateId=null;
+  const spectating=r.phase==='playing'&&m&&!m.alive&&state.spectateId;
+  const selected=r.players.find(p=>p.id===state.spectateId);
+  const spectatorPanel=(r.phase==='playing'&&m&&!m.alive)?`<div class="spectator-panel"><b>💀 아웃!</b><span>${alive.length?`살아있는 참가자를 눌러 관전하세요.${selected?` · 현재 <strong>${esc(selected.nickname)}</strong> 관전 중`:''}`:'모든 참가자가 아웃되었습니다.'}</span><div class="spectator-buttons">${alive.map(p=>`<button class="btn ${p.id===state.spectateId?'primary':''}" onclick="spectatePlayer('${p.id}')">👀 ${esc(p.nickname)}</button>`).join('')}</div></div>`:'';
+  const people=r.players.map(p=>{
+    const cls=[p.id!==socket.id?'other':'',!p.alive?'dead':'',spectating&&p.id===state.spectateId?'spectated':'',spectating&&p.alive&&p.id!==state.spectateId?'spectator-dim':''].filter(Boolean).join(' ');
+    return `<div class="person ${cls}" data-player="${p.id}" style="left:${p.x}%;--person-color:${p.color}"><span class="person-icon">👤</span><span class="person-name">${esc(p.nickname)}${p.alive?'':' · OUT'}</span><span class="person-hitbox" aria-hidden="true"></span></div>`;
+  }).join('');
+  const drops=(d?.drops||[]).filter(x=>Date.now()-x.bornAt<x.duration+250).map(p=>poopHtml(p)).join('');
+  return `<div class="center"><div class="title">💩 똥피하기</div><p class="sub">방향키 ← → 로 이동하세요. 똥과 몸통이 실제로 겹칠 때만 아웃됩니다.</p></div>${r.phase==='lobby'&&host()?`<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('dodge:start')">게임 시작</button></div>`:''}${spectatorPanel}<div class="arena ${spectating?'spectator-mode':''}" id="arena"><div class="hud"><span id="dodgeTime">생존 0.0초</span><span id="dodgeLevel">속도 2단계 · 개수 3단계</span></div>${people}${drops}</div>${r.phase==='finished'?ranking(d.ranking,'time'):''}${commonEnd()}`
+}
+function spectatePlayer(id){if(state.room?.game!=='dodge'||state.room.phase!=='playing'||me()?.alive)return;const p=state.room.players.find(x=>x.id===id&&x.alive);if(!p)return;state.spectateId=id;render()}
+function poopHtml(p){const elapsed=Math.max(0,Date.now()-p.bornAt);return `<div class="poop" data-drop="${p.id}" style="left:${p.x}%;top:-40px;animation-duration:${p.duration}ms;animation-delay:-${Math.min(elapsed,p.duration)}ms"><span class="poop-emoji">💩</span><span class="poop-hitbox" aria-hidden="true"></span></div>`}
+function addPoopElement(p){const arena=document.getElementById('arena');if(!arena||document.querySelector(`[data-drop="${p.id}"]`))return;arena.insertAdjacentHTML('beforeend',poopHtml(p));setTimeout(()=>document.querySelector(`[data-drop="${p.id}"]`)?.remove(),Math.max(50,p.duration-(Date.now()-p.bornAt)+350))}
+function startDodgeLocal(){if(state.dodgeTimer||!me()?.alive)return;state.dodgeX=me().x;document.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();state.keys[e.key]=true}};document.onkeyup=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key))state.keys[e.key]=false};state.dodgeTimer=requestAnimationFrame(dodgeLoop)}
+function stopDodgeLocal(removePoops=false){if(state.dodgeTimer)cancelAnimationFrame(state.dodgeTimer);state.dodgeTimer=0;state.keys={};document.onkeydown=null;document.onkeyup=null;if(removePoops)document.querySelectorAll('.poop').forEach(x=>x.remove())}
+function dodgeLoop(){if(state.room?.phase!=='playing'||!me()?.alive){stopDodgeLocal(false);return}if(state.keys.ArrowLeft)state.dodgeX-=.75;if(state.keys.ArrowRight)state.dodgeX+=.75;state.dodgeX=Math.max(3,Math.min(97,state.dodgeX));const el=document.querySelector(`[data-player="${socket.id}"]`);if(el)el.style.left=state.dodgeX+'%';socket.emit('dodge:move',state.dodgeX);checkPoopCollision();updateDodgeHud();state.dodgeTimer=requestAnimationFrame(dodgeLoop)}
+function checkPoopCollision(){const hit=document.querySelector(`[data-player="${socket.id}"] .person-hitbox`);if(!hit)return;const a=hit.getBoundingClientRect();for(const p of document.querySelectorAll('.poop-hitbox')){const b=p.getBoundingClientRect();const overlapX=Math.min(a.right,b.right)-Math.max(a.left,b.left);const overlapY=Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top);if(overlapX>=7&&overlapY>=7){stopDodgeLocal(false);socket.emit('dodge:hit');break}}}
+function updateDodgeHud(){const d=state.room?.dodge;if(!d)return;const t=document.getElementById('dodgeTime'),l=document.getElementById('dodgeLevel');if(t&&d.startedAt)t.textContent=(me()?.alive?'생존 ':'관전 ')+((Date.now()-d.startedAt)/1000).toFixed(1)+'초';if(l)l.textContent=`속도 ${d.speedLevel||1}단계 · 개수 ${d.countLevel||1}단계`}
 
 function raceView(){const r=state.room;return `<div class="center"><div class="title">🏎️ 레이싱</div><p class="sub">스페이스바를 눌렀다 떼며 연타하세요. 꾹 누르기는 인정되지 않습니다.</p></div>${r.phase==='lobby'&&host()?`<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('race:start')">레이싱 시작</button></div>`:''}<div class="race-track">${r.players.map(p=>`<div class="lane"><div class="car" style="left:calc(${Math.min(88,p.progress*.88)}%);background:${p.color}">🚗 ${esc(p.nickname)}</div><div class="finish">🏁</div>${p.finishedAt?'<span class="arrived">도착!</span>':''}</div>`).join('')}</div>${r.phase==='finished'?ranking(r.race.ranking,'time'):''}${commonEnd()}`}
 window.addEventListener('keydown',e=>{if(e.code!=='Space')return;if(state.room?.game==='race'&&state.room.phase==='playing'){e.preventDefault();if(!e.repeat&&!state.raceKeyDown){state.raceKeyDown=true;socket.emit('race:tap')}}else if(state.room?.game==='timing'&&state.room.phase==='playing'){e.preventDefault();if(!e.repeat&&!state.timingKeyDown){state.timingKeyDown=true;stopTiming()}}});window.addEventListener('keyup',e=>{if(e.code==='Space'){state.raceKeyDown=false;state.timingKeyDown=false}});
