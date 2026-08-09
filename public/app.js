@@ -28,7 +28,7 @@ socket.on('dodge:drops',drops=>{if(state.room?.game!=='dodge'||state.room.phase!
 socket.on('connect',()=>render());
 
 function home(){return `<main class="page"><div class="brand"><h1>인계자 정하기</h1><small>경강 미니게임</small></div><div class="home-grid"><section class="card"><h2>같이 놀 준비됐나요? 🎉</h2><div class="field"><label>닉네임</label><input id="nickname" class="input" maxlength="20" placeholder="닉네임을 입력하세요" value="${esc(state.nickname)}"></div><div class="field"><label>초대코드</label><input id="invite" class="input" maxlength="6" placeholder="참가자만 입력" style="text-transform:uppercase"></div><div class="guide"><b>방장</b> = 닉네임 입력 후 게임 선택<br><b>참가자</b> = 닉네임 입력 후 초대코드에 방장이 보낸 초대코드 입력</div><div class="actions"><button class="btn primary" onclick="createRoom()">선택한 게임 방 만들기</button><button class="btn mint" onclick="joinRoom()">초대코드로 참가하기</button></div></section><section class="card"><h2>게임 선택</h2><div class="games">${Object.entries(gameMeta).map(([k,[e,n]])=>`<button class="game-card ${state.selected===k?'selected':''}" onclick="selectGame('${k}')"><span class="emoji">${e}</span><b>${n}</b><span class="sub">${desc(k)}</span>${k==='gomoku'?'<span class="game-badge">2인용</span>':''}</button>`).join('')}</div><div id="topicWrap" class="field ${state.selected==='bingo'?'':'hidden'}"><label>빙고 주제</label><input id="topic" class="input" maxlength="40" placeholder="예: 우리반 추억, 음식, 여행지" value="${esc(state.topic)}"><label>빙고판 크기</label><div class="size-picker">${[5,4,3].map(n=>`<button type="button" class="size-option ${state.bingoSize===n?'selected':''}" onclick="setBingoSize(${n})">${n}×${n}<small>${n*n}칸</small></button>`).join('')}</div></div></section></div></main>`}
-function desc(k){return {ladder:'운명을 따라 내려가기',bingo:'3×3 · 4×4 · 5×5 선택',dodge:'실시간 생존 게임',race:'스페이스바 연타 대결',timing:'5초에 가장 가깝게 멈추기',gomoku:'두 명이 겨루는 오목'}[k]}
+function desc(k){return {ladder:'운명을 따라 내려가기',bingo:'3×3 · 4×4 · 5×5 선택',dodge:'실시간 생존 게임',race:'스페이스바 연타 대결',timing:'5~10초 랜덤 목표 맞추기',gomoku:'두 명이 겨루는 오목'}[k]}
 function selectGame(k){state.selected=k;state.nickname=document.getElementById('nickname')?.value||state.nickname;state.topic=document.getElementById('topic')?.value||state.topic;render()}
 function setBingoSize(n){state.nickname=document.getElementById('nickname')?.value||state.nickname;state.topic=document.getElementById('topic')?.value||state.topic;state.bingoSize=[3,4,5].includes(n)?n:5;render()}
 function createRoom(){const nickname=document.getElementById('nickname').value.trim();const topic=document.getElementById('topic')?.value.trim()||'';socket.emit('room:create',{nickname,game:state.selected,topic,bingoSize:state.bingoSize},r=>{if(!r.ok)toast(r.message,'error');else state.nickname=nickname})}
@@ -135,15 +135,16 @@ window.addEventListener('keydown',e=>{if(e.code!=='Space')return;if(state.room?.
 function ranking(rows,type){return `<div class="ranking">${rows.map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${type==='time'?(x.time/1000).toFixed(2)+'초':''}</span></div>`).join('')}</div>`}
 
 function timingView(){
-  const r=state.room,t=r.timing||{targetMs:5000,submissions:[],ranking:[]};
+  const r=state.room,t=r.timing||{targetMs:null,submissions:[],ranking:[]};
   const mine=t.submissions?.find(x=>x.id===socket.id);
   const waiting=(t.submissions||[]).length;
   const playButton=r.phase==='playing'?`<button class="timing-stop ${mine?'done':''}" ${mine?'disabled':''} onclick="stopTiming()">${mine?'기록 완료!':'지금이다!'}</button>`:'';
   const lobby=r.phase==='lobby'&&host()?`<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('timing:start')">타이밍 게임 시작</button></div>`:'';
-  const message=r.phase==='playing'?(mine?`내 기록 <b>${(mine.time/1000).toFixed(3)}초</b> · 다른 참가자를 기다리는 중`:'화면의 숫자를 보지 않고 마음속으로 5초를 센 뒤 버튼 또는 스페이스바를 누르세요!'):'방장이 시작하면 3, 2, 1 후 동시에 시작합니다.';
+  const targetSec=(t.targetMs||0)/1000;
+  const message=r.phase==='playing'?(mine?`내 기록 <b>${(mine.time/1000).toFixed(3)}초</b> · 다른 참가자를 기다리는 중`:`마음속으로 ${targetSec.toFixed(0)}초를 센 뒤 버튼 또는 스페이스바를 누르세요!`):'방장이 시작하면 3, 2, 1 후 5~10초 사이의 랜덤 목표가 공개됩니다.';
   const progress=r.phase==='playing'?`<div class="timing-progress">기록 완료 ${waiting} / ${r.players.length}명</div>`:'';
-  const results=r.phase==='finished'?`<div class="ranking"><h3>⏱️ 5.000초에 가까운 순위</h3>${(t.ranking||[]).map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${(x.time/1000).toFixed(3)}초 · 차이 ${(x.diff/1000).toFixed(3)}초</span></div>`).join('')}</div>`:'';
-  return `<div class="center"><div class="title">⏱️ 타이밍 게임</div><p class="sub">목표는 정확히 5.000초!</p></div>${lobby}<div class="timing-stage"><div class="timing-target">5.000초</div><p>${message}</p>${playButton}${progress}</div>${results}${commonEnd()}`;
+  const results=r.phase==='finished'?`<div class="ranking"><h3>⏱️ ${targetSec.toFixed(3)}초에 가까운 순위</h3>${(t.ranking||[]).map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${(x.time/1000).toFixed(3)}초 · 차이 ${(x.diff/1000).toFixed(3)}초</span></div>`).join('')}</div>`:'';
+  return `<div class="center"><div class="title">⏱️ 타이밍 게임</div><p class="sub">매 판 5~10초 사이의 목표가 랜덤으로 정해집니다.</p></div>${lobby}<div class="timing-stage"><div class="timing-target">${r.phase==='playing'||r.phase==='finished'?`${targetSec.toFixed(3)}초`:'? 초'}</div><p>${message}</p>${playButton}${progress}</div>${results}${commonEnd()}`;
 }
 function stopTiming(){if(state.room?.game==='timing'&&state.room.phase==='playing')socket.emit('timing:stop')}
 
