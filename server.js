@@ -15,7 +15,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','gomoku']);
+const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','bomb','memory','gomoku']);
 
 const LIAR_WORDS = {
   '음식':['김치찌개','삼겹살','떡볶이','비빔밥','치킨','피자','라면','김밥','돈까스','냉면','짜장면','카레'],
@@ -62,6 +62,8 @@ const roomView = (room, viewerId) => ({
   race: room.race,
   timing: room.timing,
   liar: room.game === 'liar' ? liarView(room, viewerId) : null,
+  bomb: room.bomb,
+  memory: room.memory,
   gomoku: room.gomoku
 });
 const emitRoom = room => {
@@ -91,6 +93,8 @@ const createRoom = (socket, nickname, game, topic='', bingoSize=5) => {
     race:{startedAt:null,ranking:[]},
     timing:{startedAt:null,targetMs:null,submissions:[],ranking:[]},
     liar:newLiarState(),
+    bomb:newBombState(),
+    memory:newMemoryState(),
     gomoku:{board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null},
     timers:[],timeouts:[]};
   rooms.set(code,room); socket.join(code); socket.data.roomCode=code; return room;
@@ -127,7 +131,7 @@ io.on('connection', socket => {
     room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};
     room.bingoBoards=new Map();room.bingoMarks=new Map();room.bingoLines=new Map();room.bingoTarget=1;room.bingoRanking=[];
     for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}
-    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();
+    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();
     room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null}; assignGomoku(room); emitRoom(room);
   });
   socket.on('room:selecting', () => { const room=getRoom(socket); if(isHost(room,socket)){room.phase='selecting';emitRoom(room);} });
@@ -235,11 +239,50 @@ io.on('connection', socket => {
     emitRoom(room);
   });
 
+
+  socket.on('bomb:start', () => {
+    const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='bomb'||room.phase!=='lobby')return;
+    if(room.players.size<3)return reject(socket,'폭탄 돌리기는 3명 이상 참가해야 합니다.');
+    startBombRound(room);
+  });
+  socket.on('bomb:pass', () => {
+    const room=getRoom(socket); if(!room||room.game!=='bomb'||room.phase!=='playing'||room.bomb.holderId!==socket.id)return;
+    const alive=[...room.players.values()].filter(p=>p.alive&&p.id!==socket.id); if(!alive.length)return;
+    let next=alive[Math.floor(Math.random()*alive.length)];
+    room.bomb.holderId=next.id; room.bomb.passCount++; emitRoom(room);
+  });
+
+  socket.on('memory:start', () => {
+    const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='memory'||room.phase!=='lobby')return;
+    const ids=[...room.players.keys()]; if(!ids.length)return;
+    const icons=['🍓','🍋','🍇','🍉','🍒','🥝','🍩','🍪','🍕','🍔','🐶','🐱'];
+    const pairCount=Math.min(12,Math.max(6,ids.length+5));
+    const cards=shuffle(icons.slice(0,pairCount).flatMap((icon,i)=>[{pair:i,icon},{pair:i,icon}])).map((x,i)=>({...x,id:i,matched:false}));
+    room.memory={cards,order:shuffle(ids),turnIndex:0,flipped:[],scores:Object.fromEntries(ids.map(id=>[id,0])),busy:false};
+    room.phase='playing';emitRoom(room);
+  });
+  socket.on('memory:flip', index => {
+    const room=getRoom(socket); if(!room||room.game!=='memory'||room.phase!=='playing'||room.memory.busy)return;
+    const m=room.memory,current=m.order[m.turnIndex]; if(current!==socket.id)return reject(socket,'지금은 다른 참가자의 차례입니다.');
+    index=Number(index);const card=m.cards[index];if(!card||card.matched||m.flipped.includes(index))return;
+    m.flipped.push(index);emitRoom(room);if(m.flipped.length<2)return;
+    const [a,b]=m.flipped.map(i=>m.cards[i]);m.busy=true;
+    if(a.pair===b.pair){
+      room.timeouts.push(setTimeout(()=>{a.matched=b.matched=true;m.scores[socket.id]=(m.scores[socket.id]||0)+1;m.flipped=[];m.busy=false;if(m.cards.every(c=>c.matched)){room.phase='finished';}emitRoom(room);},650));
+    }else{
+      room.timeouts.push(setTimeout(()=>{m.flipped=[];m.turnIndex=(m.turnIndex+1)%m.order.length;m.busy=false;emitRoom(room);},1100));
+    }
+  });
+
   socket.on('gomoku:place', ({r,c}) => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='gomoku'||room.phase==='finished'||room.players.size!==2||!p?.stone)return; if(room.phase==='lobby')room.phase='playing'; if(p.stone!==room.gomoku.turn||room.gomoku.board[r]?.[c])return; room.gomoku.board[r][c]=p.stone; const line=findWin(room.gomoku.board,r,c,p.stone); if(line){room.gomoku.winner=p.nickname;room.gomoku.winLine=line;room.phase='finished';} else room.gomoku.turn=p.stone==='black'?'white':'black'; emitRoom(room); });
 
   socket.on('disconnect', () => leaveRoom(socket));
 });
 
+function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function newBombState(){return {holderId:null,round:0,passCount:0,eliminated:[],winner:null,explodesAt:null};}
+function newMemoryState(){return {cards:[],order:[],turnIndex:0,flipped:[],scores:{},busy:false};}
+function startBombRound(room){const alive=[...room.players.values()].filter(p=>p.alive);if(alive.length<=1){room.bomb.winner=alive[0]?.nickname||null;room.phase='finished';emitRoom(room);return;}room.phase='playing';room.bomb.round++;room.bomb.holderId=alive[Math.floor(Math.random()*alive.length)].id;room.bomb.passCount=0;const ms=5500+Math.floor(Math.random()*6500);room.bomb.explodesAt=Date.now()+ms;emitRoom(room);room.timeouts.push(setTimeout(()=>{if(room.phase!=='playing')return;const p=room.players.get(room.bomb.holderId);if(p&&p.alive){p.alive=false;room.bomb.eliminated.push({id:p.id,nickname:p.nickname,round:room.bomb.round});}room.bomb.holderId=null;emitRoom(room);room.timeouts.push(setTimeout(()=>startBombRound(room),1700));},ms));}
 function newLiarState(){return {liarId:null,category:null,word:null,order:[],round:0,turnIndex:0,messages:[],votes:{},result:null};}
 function liarView(room,viewerId){
   const l=room.liar||newLiarState(), isLiar=l.liarId===viewerId;
@@ -260,7 +303,7 @@ function spawnDodgeBatch(room){
   room.timeouts.push(setTimeout(()=>spawnDodgeBatch(room),delay));
 }
 
-function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
+function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
 function findWin(board,r,c,s){const dirs=[[1,0],[0,1],[1,1],[1,-1]];for(const[dr,dc]of dirs){const line=[[r,c]];for(const sign of[-1,1])for(let k=1;k<5;k++){const rr=r+dr*k*sign,cc=c+dc*k*sign;if(board[rr]?.[cc]===s)line.push([rr,cc]);else break;}if(line.length>=5)return line;}return null;}
 function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);emitRoom(room);}
 server.listen(PORT,()=>console.log(`Server running on ${PORT}`));
