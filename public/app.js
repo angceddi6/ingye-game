@@ -3,7 +3,7 @@ const app=document.getElementById('app');
 let state={room:null,nickname:'',selected:'ladder',topic:'',bingoSize:5,countdown:null,dodgeX:50,dodgeTimer:0,keys:{},spectateId:null,raceKeyDown:false,timingKeyDown:false};
 let bingoDraft=null;
 let bingoComposing=false;
-const gameMeta={ladder:['🪜','사다리 타기'],bingo:['⭕','빙고'],dodge:['💩','똥피하기'],race:['🏎️','레이싱'],timing:['⏱️','타이밍 게임'],gomoku:['⚫','오목']};
+const gameMeta={ladder:['🪜','사다리 타기'],bingo:['⭕','빙고'],dodge:['💩','똥피하기'],race:['🏎️','레이싱'],timing:['⏱️','타이밍 게임'],liar:['🕵️','라이어 게임'],gomoku:['⚫','오목']};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
 const me=()=>state.room?.players.find(p=>p.id===socket.id);
 const host=()=>state.room?.hostId===socket.id;
@@ -28,7 +28,7 @@ socket.on('dodge:drops',drops=>{if(state.room?.game!=='dodge'||state.room.phase!
 socket.on('connect',()=>render());
 
 function home(){return `<main class="page"><div class="brand"><h1>인계자 정하기</h1><small>경강 미니게임</small></div><div class="home-grid"><section class="card"><h2>같이 놀 준비됐나요? 🎉</h2><div class="field"><label>닉네임</label><input id="nickname" class="input" maxlength="20" placeholder="닉네임을 입력하세요" value="${esc(state.nickname)}"></div><div class="field"><label>초대코드</label><input id="invite" class="input" maxlength="6" placeholder="참가자만 입력" style="text-transform:uppercase"></div><div class="guide"><b>방장</b> = 닉네임 입력 후 게임 선택<br><b>참가자</b> = 닉네임 입력 후 초대코드에 방장이 보낸 초대코드 입력</div><div class="actions"><button class="btn primary" onclick="createRoom()">선택한 게임 방 만들기</button><button class="btn mint" onclick="joinRoom()">초대코드로 참가하기</button></div></section><section class="card"><h2>게임 선택</h2><div class="games">${Object.entries(gameMeta).map(([k,[e,n]])=>`<button class="game-card ${state.selected===k?'selected':''}" onclick="selectGame('${k}')"><span class="emoji">${e}</span><b>${n}</b><span class="sub">${desc(k)}</span>${k==='gomoku'?'<span class="game-badge">2인용</span>':''}</button>`).join('')}</div><div id="topicWrap" class="field ${state.selected==='bingo'?'':'hidden'}"><label>빙고 주제</label><input id="topic" class="input" maxlength="40" placeholder="예: 우리반 추억, 음식, 여행지" value="${esc(state.topic)}"><label>빙고판 크기</label><div class="size-picker">${[5,4,3].map(n=>`<button type="button" class="size-option ${state.bingoSize===n?'selected':''}" onclick="setBingoSize(${n})">${n}×${n}<small>${n*n}칸</small></button>`).join('')}</div></div></section></div></main>`}
-function desc(k){return {ladder:'운명을 따라 내려가기',bingo:'3×3 · 4×4 · 5×5 선택',dodge:'실시간 생존 게임',race:'스페이스바 연타 대결',timing:'5~10초 랜덤 목표 맞추기',gomoku:'두 명이 겨루는 오목'}[k]}
+function desc(k){return {ladder:'운명을 따라 내려가기',bingo:'3×3 · 4×4 · 5×5 선택',dodge:'실시간 생존 게임',race:'스페이스바 연타 대결',timing:'5~10초 랜덤 타이밍 맞추기',liar:'3라운드 설명 후 라이어 찾기',gomoku:'두 명이 겨루는 오목'}[k]}
 function selectGame(k){state.selected=k;state.nickname=document.getElementById('nickname')?.value||state.nickname;state.topic=document.getElementById('topic')?.value||state.topic;render()}
 function setBingoSize(n){state.nickname=document.getElementById('nickname')?.value||state.nickname;state.topic=document.getElementById('topic')?.value||state.topic;state.bingoSize=[3,4,5].includes(n)?n:5;render()}
 function createRoom(){const nickname=document.getElementById('nickname').value.trim();const topic=document.getElementById('topic')?.value.trim()||'';socket.emit('room:create',{nickname,game:state.selected,topic,bingoSize:state.bingoSize},r=>{if(!r.ok)toast(r.message,'error');else state.nickname=nickname})}
@@ -40,7 +40,7 @@ function chooseNext(game){if(game!=='bingo')return socket.emit('room:chooseGame'
 function openBingoSetup(){const wrap=document.createElement('div');wrap.className='overlay';wrap.id='bingoSetupOverlay';wrap.innerHTML=`<div class="modal-card"><div class="title">⭕ 빙고 설정</div><div class="field"><label>빙고 주제</label><input id="nextBingoTopic" class="input" maxlength="40" placeholder="예: 음식, 여행지, 우리반 추억"></div><div class="field"><label>빙고판 크기</label><div class="size-picker">${[5,4,3].map(n=>`<button type="button" class="size-option ${n===5?'selected':''}" data-next-size="${n}" onclick="pickNextBingoSize(${n})">${n}×${n}<small>${n*n}칸</small></button>`).join('')}</div></div><div class="actions"><button class="btn primary" onclick="confirmNextBingo()">빙고 선택</button><button class="btn danger" onclick="document.getElementById('bingoSetupOverlay').remove()">취소</button></div></div>`;document.body.append(wrap);wrap.dataset.size='5';setTimeout(()=>document.getElementById('nextBingoTopic')?.focus(),0)}
 function pickNextBingoSize(n){const w=document.getElementById('bingoSetupOverlay');if(!w)return;w.dataset.size=String(n);w.querySelectorAll('[data-next-size]').forEach(b=>b.classList.toggle('selected',Number(b.dataset.nextSize)===n))}
 function confirmNextBingo(){const w=document.getElementById('bingoSetupOverlay');const topic=document.getElementById('nextBingoTopic')?.value.trim()||'';const bingoSize=Number(w?.dataset.size)||5;w?.remove();socket.emit('room:chooseGame',{game:'bingo',topic,bingoSize})}
-function gameView(){const r=state.room;return {ladder:ladderView,bingo:bingoView,dodge:dodgeView,race:raceView,timing:timingView,gomoku:gomokuView}[r.game]()}
+function gameView(){const r=state.room;return {ladder:ladderView,bingo:bingoView,dodge:dodgeView,race:raceView,timing:timingView,liar:liarView,gomoku:gomokuView}[r.game]()}
 function commonEnd(){if(state.room.phase!=='finished')return'';return `<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('game:restart')">게임 다시하기</button>${host()?`<button class="btn mint" onclick="socket.emit('room:selecting')">다른 게임 선택하기</button>`:''}<button class="btn danger" onclick="leaveRoom()">방 나가기</button></div>`}
 function leaveRoom(){socket.emit('room:leave');state.room=null;render()}
 function countdownOverlay(){const p=state.room?.phase;if(p!=='countdown')return'';return `<div class="overlay"><div class="count" id="countText">3</div></div>`}
@@ -136,17 +136,33 @@ function ranking(rows,type){return `<div class="ranking">${rows.map((x,i)=>`<div
 
 function timingView(){
   const r=state.room,t=r.timing||{targetMs:null,submissions:[],ranking:[]};
-  const mine=t.submissions?.find(x=>x.id===socket.id);
-  const waiting=(t.submissions||[]).length;
+  const mine=t.submissions?.find(x=>x.id===socket.id),waiting=(t.submissions||[]).length;
+  const target=t.targetMs?`${(t.targetMs/1000).toFixed(3)}초`:'? 초';
   const playButton=r.phase==='playing'?`<button class="timing-stop ${mine?'done':''}" ${mine?'disabled':''} onclick="stopTiming()">${mine?'기록 완료!':'지금이다!'}</button>`:'';
   const lobby=r.phase==='lobby'&&host()?`<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('timing:start')">타이밍 게임 시작</button></div>`:'';
-  const targetSec=(t.targetMs||0)/1000;
-  const message=r.phase==='playing'?(mine?`내 기록 <b>${(mine.time/1000).toFixed(3)}초</b> · 다른 참가자를 기다리는 중`:`마음속으로 ${targetSec.toFixed(0)}초를 센 뒤 버튼 또는 스페이스바를 누르세요!`):'방장이 시작하면 3, 2, 1 후 5~10초 사이의 랜덤 목표가 공개됩니다.';
+  const message=r.phase==='playing'?(mine?`내 기록 <b>${(mine.time/1000).toFixed(3)}초</b> · 다른 참가자를 기다리는 중`:`목표 <b>${target}</b>를 마음속으로 센 뒤 버튼 또는 스페이스바를 누르세요!`):'매 게임 5~10초 사이의 목표 시간이 랜덤으로 정해집니다.';
   const progress=r.phase==='playing'?`<div class="timing-progress">기록 완료 ${waiting} / ${r.players.length}명</div>`:'';
-  const results=r.phase==='finished'?`<div class="ranking"><h3>⏱️ ${targetSec.toFixed(3)}초에 가까운 순위</h3>${(t.ranking||[]).map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${(x.time/1000).toFixed(3)}초 · 차이 ${(x.diff/1000).toFixed(3)}초</span></div>`).join('')}</div>`:'';
-  return `<div class="center"><div class="title">⏱️ 타이밍 게임</div><p class="sub">매 판 5~10초 사이의 목표가 랜덤으로 정해집니다.</p></div>${lobby}<div class="timing-stage"><div class="timing-target">${r.phase==='playing'||r.phase==='finished'?`${targetSec.toFixed(3)}초`:'? 초'}</div><p>${message}</p>${playButton}${progress}</div>${results}${commonEnd()}`;
+  const results=r.phase==='finished'?`<div class="ranking"><h3>⏱️ ${target}에 가까운 순위</h3>${(t.ranking||[]).map((x,i)=>`<div class="rank-row"><span>${['🥇','🥈','🥉'][i]||`${i+1}위`} ${esc(x.nickname)}</span><span>${(x.time/1000).toFixed(3)}초 · 차이 ${(x.diff/1000).toFixed(3)}초</span></div>`).join('')}</div>`:'';
+  return `<div class="center"><div class="title">⏱️ 타이밍 게임</div><p class="sub">이번 목표는 게임 시작과 동시에 공개됩니다.</p></div>${lobby}<div class="timing-stage"><div class="timing-target">${target}</div><p>${message}</p>${playButton}${progress}</div>${results}${commonEnd()}`;
 }
 function stopTiming(){if(state.room?.game==='timing'&&state.room.phase==='playing')socket.emit('timing:stop')}
+
+function liarView(){
+  const r=state.room,l=r.liar||{},m=me();
+  if(r.phase==='lobby')return `<div class="center"><div class="title">🕵️ 라이어 게임</div><p class="sub">한 명만 제시어를 모릅니다. 3라운드 동안 차례대로 설명한 뒤 라이어를 찾아보세요.</p><div class="liar-rules">3명 이상 · 라이어 1명 랜덤 · 설명 3라운드 · 전원 투표</div></div>${host()?`<div class="actions" style="justify-content:center"><button class="btn primary" onclick="socket.emit('liar:start')">라이어 게임 시작</button></div>`:'<p class="center sub">방장이 게임을 시작할 때까지 기다려 주세요.</p>'}`;
+  const identity=l.isLiar?`<div class="liar-secret liar"><span>🤫</span><b>당신은 라이어 입니다.</b><small>다른 사람의 설명을 듣고 제시어를 유추하세요.</small></div>`:`<div class="liar-secret word"><span>🔐 제시어</span><b>${esc(l.word||'')}</b><small>${l.category?`카테고리 · ${esc(l.category)}`:''}</small></div>`;
+  if(r.phase==='playing'){
+    const currentId=l.order?.[l.turnIndex],current=r.players.find(p=>p.id===currentId),myTurn=currentId===socket.id;
+    return `<div class="center"><div class="title">🕵️ 라이어 게임 · ${Math.min(3,l.round||1)}라운드</div></div>${identity}<div class="liar-turn"><b>${current?`[${esc(current.nickname)}]부터 단어에 대한 설명을 해주세요.`:'설명 차례를 준비 중입니다.'}</b><div class="turn-order">${(l.order||[]).map(id=>{const p=r.players.find(x=>x.id===id);return p?`<span class="${id===currentId?'active':''}">${esc(p.nickname)}</span>`:''}).join('<i>→</i>')}</div></div><div class="liar-chat"><div class="chat-log">${(l.messages||[]).map(x=>`<div class="chat-msg"><span>${esc(x.nickname)} · ${x.round}R</span><b>${esc(x.text)}</b></div>`).join('')||'<p class="sub">아직 설명이 없습니다.</p>'}</div><div class="chat-input"><input id="liarText" class="input" maxlength="100" placeholder="${myTurn?'제시어를 직접 말하지 말고 설명하세요':'내 차례가 되면 입력할 수 있어요'}" ${myTurn?'':'disabled'} onkeydown="if(event.key==='Enter')sendLiarText()"><button class="btn primary" onclick="sendLiarText()" ${myTurn?'':'disabled'}>설명 보내기</button></div></div>`;
+  }
+  if(r.phase==='voting'){
+    return `<div class="center"><div class="title">🗳️ 누가 라이어?</div><p class="sub">한 명을 선택해 투표하세요. 투표 후에는 변경할 수 없습니다.</p></div>${identity}<div class="vote-grid">${r.players.filter(p=>p.id!==socket.id).map(p=>`<button class="vote-card" ${l.voted?'disabled':''} onclick="voteLiar('${p.id}')"><span>👤</span><b>${esc(p.nickname)}</b></button>`).join('')}</div><div class="center sub">투표 완료 ${l.voteCount||0} / ${r.players.length}명 ${l.voted?'· 내 투표 완료 ✓':''}</div>`;
+  }
+  const result=l.result||{};const counts=result.counts||{};
+  return `<div class="center"><div class="title">${result.caught?'🎯 라이어를 찾았습니다!':'😈 라이어 승!'}</div><div class="liar-result"><div class="liar-reveal"><span>${esc(result.liarNickname||'')}</span><b>라이어!</b></div><p>제시어는 <strong>${esc(l.word||'결과 공개')}</strong>${l.category?` · ${esc(l.category)}`:''}</p></div></div><div class="ranking">${r.players.slice().sort((a,b)=>(counts[b.id]||0)-(counts[a.id]||0)).map(p=>`<div class="rank-row"><span>${esc(p.nickname)}${p.id===result.liarId?' 😈':''}</span><span>${counts[p.id]||0}표</span></div>`).join('')}</div>${commonEnd()}`;
+}
+function sendLiarText(){const el=document.getElementById('liarText');const text=el?.value.trim();if(text)socket.emit('liar:say',text)}
+function voteLiar(id){socket.emit('liar:vote',id)}
 
 function gomokuView(){const r=state.room,g=r.gomoku,p=me();const status=g.winner?`${esc(g.winner)}이(가) 승리!`:r.players.length<2?'상대 참가자를 기다리는 중...':`${g.turn==='black'?'흑':'백'}돌 차례`;return `<div class="center"><div class="title">⚫ 오목</div><p class="sub">내 돌: ${p?.stone==='black'?'흑':p?.stone==='white'?'백':'관전'} · ${status}</p></div><div class="gomoku-wrap"><div class="gomoku">${g.board.flatMap((row,rr)=>row.map((v,cc)=>`<button class="intersection" onclick="placeStone(${rr},${cc})">${v?`<span class="stone ${v} ${g.winLine?.some(([r,c])=>r===rr&&c===cc)?'win':''}"></span>`:''}</button>`)).join('')}</div></div>${commonEnd()}`}
 function placeStone(r,c){socket.emit('gomoku:place',{r,c})}

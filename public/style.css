@@ -21,3 +21,13 @@
 .spectator-panel{width:min(760px,100%);margin:12px auto 16px;padding:14px 16px;border-radius:20px;background:#2f2940;color:white;display:flex;flex-direction:column;gap:10px;text-align:center;box-shadow:0 12px 30px #2f294033}
 .spectator-panel>b{font-size:20px}.spectator-panel strong{color:#ffd166}.spectator-buttons{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}.spectator-buttons .btn{padding:9px 13px}
 .arena.spectator-mode{box-shadow:0 0 0 4px #ffd16655,0 18px 45px #0001}
+
+/* Liar game */
+.liar-rules{display:inline-block;margin:12px auto;padding:10px 16px;border-radius:999px;background:#f5f3ff;color:#6556a8;font-weight:700}
+.liar-secret{max-width:520px;margin:14px auto 18px;padding:20px;border-radius:22px;text-align:center;display:flex;flex-direction:column;gap:7px;border:2px solid rgba(0,0,0,.05)}
+.liar-secret span{font-size:14px;font-weight:800}.liar-secret b{font-size:28px}.liar-secret small{opacity:.72}.liar-secret.liar{background:#fff1f3;border-color:#ffc6d0}.liar-secret.word{background:#f1fff9;border-color:#bcebd6}
+.liar-turn{max-width:760px;margin:0 auto 14px;text-align:center;padding:15px;border-radius:18px;background:#fff8e8}.turn-order{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:7px;margin-top:11px}.turn-order span{padding:6px 10px;border-radius:999px;background:white;font-size:13px}.turn-order span.active{background:#6c5ce7;color:white;font-weight:800;transform:scale(1.06)}.turn-order i{font-style:normal;opacity:.35}
+.liar-chat{max-width:760px;margin:auto}.chat-log{height:260px;overflow:auto;border:1px solid #ececf3;border-radius:18px;background:#fafafe;padding:12px}.chat-msg{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;margin-bottom:7px;border-radius:13px;background:white}.chat-msg span{min-width:100px;font-size:12px;color:#777}.chat-msg b{font-size:15px}.chat-input{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px}
+.vote-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;max-width:760px;margin:18px auto}.vote-card{border:1px solid #e7e5f4;background:white;border-radius:18px;padding:18px 10px;cursor:pointer}.vote-card:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,0,0,.08)}.vote-card span{display:block;font-size:28px;margin-bottom:6px}.vote-card:disabled{opacity:.55;cursor:default}
+.liar-result{max-width:560px;margin:15px auto;padding:22px;border-radius:22px;background:#fff7e8}.liar-reveal{display:flex;justify-content:center;align-items:baseline;gap:10px}.liar-reveal span{font-size:27px;font-weight:900}.liar-reveal b{font-size:21px;color:#e74c3c}
+@media(max-width:600px){.chat-input{grid-template-columns:1fr}.chat-log{height:220px}.liar-secret b{font-size:23px}}
