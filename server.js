@@ -15,7 +15,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','bomb','memory','gomoku']);
+const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','bomb','memory','typing','gomoku']);
 
 const LIAR_WORDS = {
   '음식':['김치찌개','삼겹살','떡볶이','비빔밥','치킨','피자','라면','김밥','돈까스','냉면','짜장면','카레'],
@@ -25,6 +25,56 @@ const LIAR_WORDS = {
   '가전':['냉장고','세탁기','전자레인지','에어컨','청소기','선풍기','텔레비전','드라이기','전기밥솥','공기청정기','커피머신','노트북'],
   '직업':['의사','간호사','소방관','경찰관','선생님','요리사','변호사','미용사','운전기사','배우','가수','약사'],
   '인물':['용하영','최충일','박세은','김소은','이소희','윤지선','정하림','최아라','안정화','김민지','오지은','윤진호','최예빈','황가람','박우영','정유정','유설아','이용재','안세진','임채영','이지은','이보영','정연재','현유정','임채원']
+};
+
+const TYPING_WORDS = {
+  medical: ['CPR', 'ROSC', 'AED', 'BLS', 'ACLS', 'ABGA', 'CBC', 'CRP', 'ESR', 'BUN', 'Creatinine', 'Na', 'K', 'Cl', 'Calcium', 'Magnesium', 'Glucose',
+ 'Lactate', 'Troponin', 'CK-MB', 'BNP', 'D-dimer', 'PT', 'aPTT', 'INR', 'Fibrinogen', 'Blood culture', 'Urine culture', 'Sputum culture',
+ 'ECG', 'EKG', 'CXR', 'CT', 'MRI', 'Ultrasound', 'Echo', 'FAST', 'POCUS', 'Angiography', 'Bronchoscopy', 'Endoscopy', 'Colonoscopy',
+ 'Intubation', 'Extubation', 'Ventilator', 'HFNC', 'NIV', 'BiPAP', 'CPAP', 'Ambu bag', 'Suction', 'Nebulizer', 'Tracheostomy', 'Chest tube',
+ 'C-line', 'A-line', 'PICC', 'IV', 'IO', 'Foley', 'NG tube', 'PEG', 'Drainage', 'Defibrillation', 'Cardioversion', 'Pacing', 'Compressions',
+ 'Airway', 'Oxygen', 'SpO2', 'EtCO2', 'PEEP', 'FiO2', 'Tidal volume', 'Respiratory rate', 'Heart rate', 'Blood pressure', 'MAP', 'GCS',
+ 'Pupil', 'Mental status', 'I&O', 'Urine output', 'NPO', 'DNR', 'Code blue', 'Triage', 'ER', 'ED', 'ICU', 'CCU', 'MICU', 'SICU', 'NICU',
+ 'PACU', 'OR', 'Shock', 'Sepsis', 'Septic shock', 'Anaphylaxis', 'Syncope', 'Cardiac arrest', 'Respiratory arrest', 'Dyspnea', 'Tachypnea',
+ 'Bradypnea', 'Hypoxia', 'Cyanosis', 'Hemoptysis', 'Pneumonia', 'Aspiration', 'ARDS', 'COPD', 'Asthma', 'Pneumothorax', 'Hemothorax',
+ 'Pleural effusion', 'Pulmonary edema', 'Pulmonary embolism', 'DVT', 'ACS', 'STEMI', 'NSTEMI', 'Angina', 'Arrhythmia', 'AF', 'A-flutter',
+ 'SVT', 'VT', 'VF', 'PVC', 'Bradycardia', 'Tachycardia', 'Heart failure', 'Cardiogenic shock', 'Hypertension', 'Hypotension',
+ 'Aortic dissection', 'Tamponade', 'Stroke', 'CVA', 'TIA', 'ICH', 'SAH', 'SDH', 'EDH', 'Seizure', 'Status epilepticus', 'Delirium', 'Coma',
+ 'Headache', 'Dizziness', 'Vertigo', 'Weakness', 'Paralysis', 'Aphasia', 'Dysarthria', 'Meningitis', 'Encephalopathy', 'Trauma',
+ 'Polytrauma', 'Fracture', 'Dislocation', 'Laceration', 'Abrasion', 'Contusion', 'Burn', 'Hemorrhage', 'Epistaxis', 'GI bleeding',
+ 'Hematemesis', 'Melena', 'Hematochezia', 'Abdominal pain', 'Appendicitis', 'Pancreatitis', 'Cholecystitis', 'Cholangitis', 'Ileus',
+ 'Peritonitis', 'Bowel obstruction', 'Perforation', 'Ascites', 'Hepatic encephalopathy', 'AKI', 'CKD', 'ESRD', 'Hematuria', 'Oliguria',
+ 'Anuria', 'UTI', 'Pyelonephritis', 'DKA', 'HHS', 'Hypoglycemia', 'Hyperglycemia', 'Hyperkalemia', 'Hypokalemia', 'Hyponatremia',
+ 'Hypernatremia', 'Acidosis', 'Alkalosis', 'Dehydration', 'Fever', 'Hypothermia', 'Infection', 'Cellulitis', 'Abscess', 'COVID-19',
+ 'Influenza', 'Isolation', 'Contact precaution', 'Droplet precaution', 'Airborne precaution', 'Transfusion', 'PRBC', 'FFP', 'Platelet',
+ 'Cryoprecipitate', 'Normal saline', 'Dextrose', 'Norepinephrine', 'Epinephrine', 'Dopamine', 'Dobutamine', 'Vasopressin', 'Amiodarone',
+ 'Adenosine', 'Atropine', 'Nitroglycerin', 'Heparin', 'Aspirin', 'Clopidogrel', 'Furosemide', 'Insulin', 'Midazolam', 'Propofol',
+ 'Ketamine', 'Fentanyl', 'Morphine', 'Rocuronium', 'Succinylcholine', 'Naloxone', 'Flumazenil', 'Calcium gluconate', 'Sodium bicarbonate',
+ 'Magnesium sulfate', 'Antibiotics', 'Vancomycin', 'Piperacillin', 'Ceftriaxone', 'Meropenem', 'Metronidazole', 'Acetaminophen',
+ 'Antipyretic', 'Analgesic', 'Sedation', 'Restraint', 'Pressure sore', 'Fall risk', 'Pain scale', 'NRS', 'RASS', 'CAM-ICU', 'SOFA', 'qSOFA',
+ 'APACHE', 'NEWS', 'MEWS', 'Central venous pressure', 'ICP', 'CPP', 'ECMO', 'CRRT', 'Hemodialysis', 'Peritoneal dialysis',
+ 'Hypovolemic shock', 'Obstructive shock', 'Distributive shock', 'Massive transfusion'],
+  daily: ['사과', '바나나', '포도', '딸기', '수박', '복숭아', '귤', '레몬', '토마토', '감자', '고구마', '양파', '마늘', '당근', '오이', '상추', '배추', '김치', '라면', '김밥', '치킨', '피자',
+ '떡볶이', '햄버거', '샌드위치', '커피', '우유', '주스', '물', '콜라', '학교', '병원', '은행', '마트', '편의점', '카페', '공원', '도서관', '영화관', '지하철', '버스', '택시', '자동차',
+ '자전거', '비행기', '기차', '여행', '바다', '산', '강', '하늘', '구름', '비', '눈', '바람', '햇빛', '우산', '모자', '신발', '양말', '바지', '셔츠', '가방', '지갑', '휴대폰', '충전기',
+ '이어폰', '컴퓨터', '키보드', '마우스', '모니터', '텔레비전', '냉장고', '세탁기', '청소기', '에어컨', '선풍기', '전자레인지', '밥솥', '침대', '이불', '베개', '소파', '책상', '의자', '거울',
+ '시계', '달력', '수건', '비누', '샴푸', '칫솔', '치약', '휴지', '가위', '풀', '연필', '지우개', '볼펜', '노트', '책', '신문', '사진', '카메라', '게임', '음악', '영화', '드라마', '노래',
+ '춤', '운동', '축구', '야구', '농구', '배구', '수영', '산책', '등산', '달리기', '요리', '청소', '빨래', '설거지', '출근', '퇴근', '휴가', '주말', '약속', '회의', '공부', '시험', '숙제',
+ '친구', '가족', '엄마', '아빠', '언니', '오빠', '동생', '선생님', '의사', '간호사', '경찰', '소방관', '요리사', '가수', '배우', '강아지', '고양이', '토끼', '사자', '호랑이', '코끼리', '기린',
+ '원숭이', '펭귄', '돌고래', '물고기', '꽃', '나무', '잔디', '봄', '여름', '가을', '겨울', '아침', '점심', '저녁', '밤', '오늘', '내일', '어제', '시간', '생일', '선물', '케이크', '초콜릿',
+ '아이스크림', '쿠키', '도넛', '행복', '사랑', '웃음', '눈물', '기분', '걱정', '기억', '꿈', '전화', '문자', '메시지', '인터넷', '비밀번호', '주소', '이름', '번호', '문', '창문', '계단',
+ '엘리베이터', '주차장', '신호등', '횡단보도', '약국', '식당', '미용실', '헬스장', '시장', '공항', '놀이공원', '동물원', '해변', '캠핑', '피크닉'],
+  idiom: ['일석이조', '이심전심', '유비무환', '전화위복', '고진감래', '새옹지마', '작심삼일', '동문서답', '금상첨화', '설상가상', '자업자득', '과유불급', '일취월장', '대기만성', '청출어람', '백문불여일견', '십시일반',
+ '막상막하', '오리무중', '사면초가', '진퇴양난', '우왕좌왕', '좌충우돌', '속수무책', '천생연분', '일편단심', '동고동락', '형설지공', '주경야독', '일거양득', '일거일득', '일장일단', '일희일비', '이구동성',
+ '이열치열', '이왕지사', '삼고초려', '사필귀정', '오매불망', '육하원칙', '칠전팔기', '팔방미인', '구사일생', '십중팔구', '백발백중', '천차만별', '만사형통', '감언이설', '개과천선', '거두절미', '견물생심',
+ '결자해지', '경거망동', '고군분투', '고생끝행복시작', '공수래공수거', '과대망상', '관포지교', '괄목상대', '구우일모', '권선징악', '금의환향', '기고만장', '기사회생', '난공불락', '남가일몽', '노심초사',
+ '다다익선', '다사다난', '단도직입', '대동소이', '대동단결', '동상이몽', '두문불출', '마이동풍', '명실상부', '무용지물', '문전성시', '박장대소', '반신반의', '방약무인', '백년가약', '백전백승', '부전자전',
+ '분골쇄신', '불철주야', '비몽사몽', '산전수전', '살신성인', '상부상조', '선견지명', '설왕설래', '소탐대실', '수수방관', '순망치한', '시기상조', '심사숙고', '아전인수', '안하무인', '어부지리', '역지사지',
+ '연목구어', '오합지졸', '와신상담', '용두사미', '우문현답', '유유상종', '의기투합', '일사천리', '일석삼조', '일심동체', '임기응변', '적반하장', '전전긍긍', '조삼모사', '주객전도', '죽마고우', '중구난방',
+ '지피지기', '천고마비', '천신만고', '청천벽력', '타산지석', '토사구팽', '파죽지세', '풍전등화', '학수고대', '함흥차사', '허심탄회', '호연지기', '화룡점정', '희로애락', '각골난망', '각양각색', '갑론을박',
+ '개선장군', '건곤일척', '견강부회', '고립무원', '공명정대', '구밀복검', '군계일학', '금시초문', '기상천외', '내우외환', '노발대발', '단사표음', '대의명분', '동병상련', '문전옥답', '미사여구', '백척간두',
+ '불문곡직', '비일비재', '사상누각', '선공후사', '수구초심', '안분지족', '양두구육', '연전연승', '오월동주', '유종의미', '일망타진', '일벌백계', '임전무퇴', '전광석화', '정정당당', '좌불안석', '천재일우',
+ '침소봉대', '탁상공론', '태연자약', '평지풍파', '호가호위', '화기애애']
 };
 
 const makeCode = () => {
@@ -64,6 +114,7 @@ const roomView = (room, viewerId) => ({
   liar: room.game === 'liar' ? liarView(room, viewerId) : null,
   bomb: room.bomb,
   memory: room.memory,
+  typing: room.typing,
   gomoku: room.gomoku
 });
 const emitRoom = room => {
@@ -95,6 +146,7 @@ const createRoom = (socket, nickname, game, topic='', bingoSize=5) => {
     liar:newLiarState(),
     bomb:newBombState(),
     memory:newMemoryState(),
+    typing:newTypingState(),
     gomoku:{board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null},
     timers:[],timeouts:[]};
   rooms.set(code,room); socket.join(code); socket.data.roomCode=code; return room;
@@ -131,7 +183,7 @@ io.on('connection', socket => {
     room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};
     room.bingoBoards=new Map();room.bingoMarks=new Map();room.bingoLines=new Map();room.bingoTarget=1;room.bingoRanking=[];
     for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}
-    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();
+    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();room.typing=newTypingState();
     room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null}; assignGomoku(room); emitRoom(room);
   });
   socket.on('room:selecting', () => { const room=getRoom(socket); if(isHost(room,socket)){room.phase='selecting';emitRoom(room);} });
@@ -274,6 +326,31 @@ io.on('connection', socket => {
     }
   });
 
+  socket.on('typing:category', category => {
+    const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='typing'||room.phase!=='lobby')return;
+    if(!['medical','daily','idiom'].includes(category))return;
+    room.typing.category=category; emitRoom(room);
+  });
+  socket.on('typing:start', () => {
+    const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='typing'||room.phase!=='lobby')return;
+    startCountdown(socket,'typing');
+  });
+  socket.on('typing:submit', raw => {
+    const room=getRoom(socket); const p=room?.players.get(socket.id);
+    if(!room||room.game!=='typing'||room.phase!=='playing'||!p)return;
+    const input=normalizeTyping(raw); if(!input)return;
+    const now=Date.now();
+    room.typing.words=room.typing.words.filter(w=>now<w.bornAt+w.duration);
+    const word=room.typing.words.find(w=>normalizeTyping(w.text)===input);
+    if(!word)return;
+    room.typing.words=room.typing.words.filter(w=>w.id!==word.id);
+    const sc=room.typing.scores[socket.id]||(room.typing.scores[socket.id]={count:0,totalMs:0,bestMs:null});
+    const responseMs=Math.max(0,now-word.bornAt); sc.count++; sc.totalMs+=responseMs; sc.bestMs=sc.bestMs==null?responseMs:Math.min(sc.bestMs,responseMs);
+    room.typing.claims.push({word:word.text,id:p.id,nickname:p.nickname,responseMs,at:now});
+    io.to(room.code).emit('typing:claim',{wordId:word.id,word:word.text,id:p.id,nickname:p.nickname,responseMs,scores:room.typing.scores});
+    io.to(room.code).emit('typing:sync',{words:room.typing.words,elapsed:now-room.typing.startedAt,scores:room.typing.scores});
+  });
+
   socket.on('gomoku:place', ({r,c}) => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='gomoku'||room.phase==='finished'||room.players.size!==2||!p?.stone)return; if(room.phase==='lobby')room.phase='playing'; if(p.stone!==room.gomoku.turn||room.gomoku.board[r]?.[c])return; room.gomoku.board[r][c]=p.stone; const line=findWin(room.gomoku.board,r,c,p.stone); if(line){room.gomoku.winner=p.nickname;room.gomoku.winLine=line;room.phase='finished';} else room.gomoku.turn=p.stone==='black'?'white':'black'; emitRoom(room); });
 
   socket.on('disconnect', () => leaveRoom(socket));
@@ -282,6 +359,43 @@ io.on('connection', socket => {
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function newBombState(){return {holderId:null,round:0,passCount:0,eliminated:[],winner:null,explodesAt:null};}
 function newMemoryState(){return {cards:[],order:[],turnIndex:0,flipped:[],scores:{},busy:false};}
+function normalizeTyping(v){return String(v??'').trim().replace(/\s+/g,' ').toLowerCase();}
+function newTypingState(){return {category:'medical',startedAt:null,endsAt:null,durationMs:60000,words:[],scores:{},claims:[],ranking:[],seq:0,speedLevel:1};}
+function typingCategoryLabel(k){return k==='medical'?'의학용어':k==='daily'?'일상용어':'사자성어';}
+function startTypingGame(room){
+  const now=Date.now(),durationMs=60000,category=['medical','daily','idiom'].includes(room.typing.category)?room.typing.category:'medical';
+  room.typing={category,startedAt:now,endsAt:now+durationMs,durationMs,words:[],scores:Object.fromEntries([...room.players.keys()].map(id=>[id,{count:0,totalMs:0,bestMs:null}])),claims:[],ranking:[],seq:0,speedLevel:1};
+  emitRoom(room);
+  const loop=()=>{
+    if(!rooms.has(room.code)||room.game!=='typing'||room.phase!=='playing')return;
+    const t=Date.now(),elapsed=t-room.typing.startedAt;
+    if(elapsed>=durationMs){finishTypingGame(room);return;}
+    room.typing.words=room.typing.words.filter(w=>t<w.bornAt+w.duration);
+    const stage=elapsed<20000?0:elapsed<40000?1:2;
+    const target=8+stage*2;
+    const duration=Math.max(4300,10500-stage*2200-Math.floor(elapsed/10000)*250);
+    const pool=TYPING_WORDS[category];
+    const active=new Set(room.typing.words.map(w=>w.text));
+    const added=[];
+    while(room.typing.words.length<target && added.length<target){
+      let text=null;
+      for(let tries=0;tries<25;tries++){const cand=pool[Math.floor(Math.random()*pool.length)];if(!active.has(cand)){text=cand;break;}}
+      if(!text)break; active.add(text);
+      const w={id:`${room.code}-tw-${++room.typing.seq}`,text,x:5+Math.random()*86,bornAt:t+Math.floor(Math.random()*350),duration};
+      room.typing.words.push(w);added.push(w);
+    }
+    room.typing.speedLevel=stage+1;
+    io.to(room.code).emit('typing:sync',{words:room.typing.words,elapsed,scores:room.typing.scores,speedLevel:room.typing.speedLevel,endsAt:room.typing.endsAt});
+    room.timeouts.push(setTimeout(loop,stage===0?900:stage===1?700:520));
+  };
+  loop();
+}
+function finishTypingGame(room){
+  if(room.phase!=='playing'||room.game!=='typing')return;
+  room.phase='finished'; room.typing.words=[];
+  room.typing.ranking=[...room.players.values()].map(p=>{const s=room.typing.scores[p.id]||{count:0,totalMs:0,bestMs:null};return {id:p.id,nickname:p.nickname,count:s.count,avgMs:s.count?Math.round(s.totalMs/s.count):null,bestMs:s.bestMs};}).sort((a,b)=>b.count-a.count||(a.avgMs??1e12)-(b.avgMs??1e12));
+  clearTimers(room); emitRoom(room); io.to(room.code).emit('typing:finished',{ranking:room.typing.ranking});
+}
 function startBombRound(room){const alive=[...room.players.values()].filter(p=>p.alive);if(alive.length<=1){room.bomb.winner=alive[0]?.nickname||null;room.phase='finished';emitRoom(room);return;}room.phase='playing';room.bomb.round++;room.bomb.holderId=alive[Math.floor(Math.random()*alive.length)].id;room.bomb.passCount=0;const ms=5500+Math.floor(Math.random()*6500);room.bomb.explodesAt=Date.now()+ms;emitRoom(room);room.timeouts.push(setTimeout(()=>{if(room.phase!=='playing')return;const p=room.players.get(room.bomb.holderId);if(p&&p.alive){p.alive=false;room.bomb.eliminated.push({id:p.id,nickname:p.nickname,round:room.bomb.round});}room.bomb.holderId=null;emitRoom(room);room.timeouts.push(setTimeout(()=>startBombRound(room),1700));},ms));}
 function newLiarState(){return {liarId:null,category:null,word:null,order:[],round:0,turnIndex:0,messages:[],votes:{},result:null};}
 function liarView(room,viewerId){
@@ -290,7 +404,7 @@ function liarView(room,viewerId){
 }
 function assignGomoku(room){ if(room.game!=='gomoku')return; let i=0;for(const p of room.players.values())p.stone=i++===0?'black':i===2?'white':null; }
 function calcBingoLines(m,size=5){const lines=[];for(let r=0;r<size;r++){const a=Array.from({length:size},(_,c)=>r*size+c);if(a.every(i=>m[i]))lines.push(a);}for(let c=0;c<size;c++){const a=Array.from({length:size},(_,r)=>r*size+c);if(a.every(i=>m[i]))lines.push(a);}const d1=Array.from({length:size},(_,i)=>i*size+i),d2=Array.from({length:size},(_,i)=>i*size+(size-1-i));if(d1.every(i=>m[i]))lines.push(d1);if(d2.every(i=>m[i]))lines.push(d2);return lines;}
-function startCountdown(socket,game){const room=getRoom(socket);if(!isHost(room,socket)||room.game!==game||room.phase!=='lobby')return;if(game==='dodge'&&room.players.size<1)return;if(game==='race'&&room.players.size<1)return;if(game==='timing'&&room.players.size<1)return;room.phase='countdown';emitRoom(room);room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code))return;room.phase='playing';resetPlayerStates(room);const now=Date.now();if(game==='dodge'){room.dodge={startedAt:now,drops:[],speedLevel:2,countLevel:3,ranking:[],dropSeq:0};room.timers.push(setInterval(()=>{if(room.phase!=='playing')return;const elapsed=Date.now()-now;room.dodge.speedLevel=2+Math.floor(elapsed/5000);room.dodge.countLevel=3+Math.floor(elapsed/10000);io.to(room.code).emit('dodge:tick',{elapsed,speedLevel:room.dodge.speedLevel,countLevel:room.dodge.countLevel});},500));spawnDodgeBatch(room);}else if(game==='race') room.race={startedAt:now,ranking:[]};else if(game==='timing') room.timing={startedAt:now,targetMs:(5+Math.floor(Math.random()*6))*1000,submissions:[],ranking:[]};emitRoom(room);},3500));}
+function startCountdown(socket,game){const room=getRoom(socket);if(!isHost(room,socket)||room.game!==game||room.phase!=='lobby')return;if(game==='dodge'&&room.players.size<1)return;if(game==='race'&&room.players.size<1)return;if(game==='timing'&&room.players.size<1)return;if(game==='typing'&&room.players.size<1)return;room.phase='countdown';emitRoom(room);room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code))return;room.phase='playing';resetPlayerStates(room);const now=Date.now();if(game==='dodge'){room.dodge={startedAt:now,drops:[],speedLevel:2,countLevel:3,ranking:[],dropSeq:0};room.timers.push(setInterval(()=>{if(room.phase!=='playing')return;const elapsed=Date.now()-now;room.dodge.speedLevel=2+Math.floor(elapsed/5000);room.dodge.countLevel=3+Math.floor(elapsed/10000);io.to(room.code).emit('dodge:tick',{elapsed,speedLevel:room.dodge.speedLevel,countLevel:room.dodge.countLevel});},500));spawnDodgeBatch(room);}else if(game==='race') room.race={startedAt:now,ranking:[]};else if(game==='timing') room.timing={startedAt:now,targetMs:(5+Math.floor(Math.random()*6))*1000,submissions:[],ranking:[]};else if(game==='typing'){startTypingGame(room);return;}emitRoom(room);},3500));}
 
 function spawnDodgeBatch(room){
   if(!rooms.has(room.code)||room.game!=='dodge'||room.phase!=='playing')return;
@@ -303,7 +417,7 @@ function spawnDodgeBatch(room){
   room.timeouts.push(setTimeout(()=>spawnDodgeBatch(room),delay));
 }
 
-function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
+function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='typing')room.typing=newTypingState();if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
 function findWin(board,r,c,s){const dirs=[[1,0],[0,1],[1,1],[1,-1]];for(const[dr,dc]of dirs){const line=[[r,c]];for(const sign of[-1,1])for(let k=1;k<5;k++){const rr=r+dr*k*sign,cc=c+dc*k*sign;if(board[rr]?.[cc]===s)line.push([rr,cc]);else break;}if(line.length>=5)return line;}return null;}
 function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);emitRoom(room);}
 server.listen(PORT,()=>console.log(`Server running on ${PORT}`));
