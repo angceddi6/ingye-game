@@ -15,7 +15,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','gomoku']);
+const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','catchmind','gomoku']);
 
 const LIAR_WORDS = {
   '음식':['김치찌개','삼겹살','떡볶이','비빔밥','치킨','피자','라면','김밥','돈까스','냉면','짜장면','카레'],
@@ -77,6 +77,11 @@ const TYPING_WORDS = {
  '침소봉대', '탁상공론', '태연자약', '평지풍파', '호가호위', '화기애애']
 };
 
+const CATCHMIND_WORDS = {
+  medical: ["심폐소생술", "제세동기", "심전도", "산소마스크", "산소포화도", "기관삽관", "인공호흡기", "앰부백", "흡인", "기관절개관", "흉관", "중심정맥관", "동맥관", "수액", "수혈", "혈압계", "체온계", "청진기", "주사기", "링거", "산소통", "인퓨전펌프", "주입펌프", "소변줄", "비위관", "배액관", "응급카트", "스트레처", "휠체어", "목보호대", "부목", "붕대", "거즈", "지혈대", "수술장갑", "마스크", "방호복", "격리실", "응급실", "중환자실", "수술실", "회복실", "구급차", "코드블루", "트리아지", "쇼크", "패혈증", "심정지", "호흡정지", "호흡곤란", "저산소증", "청색증", "폐렴", "천식", "기흉", "혈흉", "폐부종", "폐색전증", "심근경색", "협심증", "부정맥", "심부전", "고혈압", "저혈압", "뇌졸중", "뇌출혈", "경련", "발작", "의식저하", "섬망", "혼수", "두통", "어지럼증", "마비", "골절", "탈구", "열상", "찰과상", "타박상", "화상", "출혈", "코피", "토혈", "혈변", "복통", "맹장염", "췌장염", "장폐색", "복수", "급성신손상", "혈뇨", "핍뇨", "요로감염", "저혈당", "고혈당", "탈수", "발열", "저체온증", "감염", "농양", "혈액배양", "소변배양", "엑스레이", "CT촬영", "초음파", "심장초음파", "혈액검사", "동맥혈가스검사", "투석", "CRRT", "ECMO", "인슐린", "에피네프린", "노르에피네프린", "아트로핀", "아미오다론", "아데노신", "니트로글리세린", "헤파린", "아스피린", "푸로세미드", "프로포폴", "케타민", "펜타닐", "모르핀", "날록손", "항생제", "진통제", "해열제", "진정제"],
+  daily: ["사과", "바나나", "포도", "딸기", "수박", "복숭아", "귤", "레몬", "토마토", "감자", "고구마", "양파", "당근", "오이", "김치", "라면", "김밥", "치킨", "피자", "떡볶이", "햄버거", "샌드위치", "커피", "우유", "주스", "콜라", "학교", "병원", "은행", "마트", "편의점", "카페", "공원", "도서관", "영화관", "지하철", "버스", "택시", "자동차", "자전거", "비행기", "기차", "바다", "산", "강", "하늘", "구름", "비", "눈", "바람", "햇빛", "우산", "모자", "신발", "양말", "바지", "셔츠", "가방", "지갑", "휴대폰", "충전기", "이어폰", "컴퓨터", "키보드", "마우스", "모니터", "텔레비전", "냉장고", "세탁기", "청소기", "에어컨", "선풍기", "전자레인지", "밥솥", "침대", "이불", "베개", "소파", "책상", "의자", "거울", "시계", "달력", "수건", "비누", "샴푸", "칫솔", "치약", "휴지", "가위", "연필", "지우개", "볼펜", "노트", "책", "신문", "사진", "카메라", "게임기", "헤드폰", "축구공", "야구공", "농구공", "배구공", "수영장", "등산화", "냄비", "프라이팬", "접시", "숟가락", "젓가락", "포크", "컵", "주전자", "도마", "칼", "냉면", "짜장면", "카레", "케이크", "초콜릿", "아이스크림", "쿠키", "도넛", "강아지", "고양이", "토끼", "사자", "호랑이", "코끼리", "기린", "원숭이", "펭귄", "돌고래", "물고기", "꽃", "나무", "잔디", "해바라기", "장미", "달", "별", "태양", "무지개", "번개", "눈사람", "선물", "풍선", "촛불", "열쇠", "문", "창문", "계단", "엘리베이터", "주차장", "신호등", "횡단보도", "약국", "식당", "미용실", "헬스장", "시장", "공항", "놀이공원", "동물원", "해변", "텐트", "돗자리", "캠핑카", "안경", "선글라스", "목도리", "장갑", "우비", "슬리퍼", "운동화", "구두", "빗", "드라이기", "화장품", "향수", "리모컨", "스피커", "전구", "선풍기", "청소포", "쓰레기통", "빗자루", "걸레", "세제", "옷걸이", "우체통", "택배상자", "편지", "우표", "지도", "나침반", "망원경", "돋보기", "자물쇠", "헬멧", "소화기", "구급상자", "체온계", "밴드", "알약", "주사", "마스크", "비상구", "트로피", "메달", "왕관", "로봇", "공룡", "유령", "마법사", "해적", "우주선", "로켓"]
+};
+
 const makeCode = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code;
@@ -120,6 +125,7 @@ const roomView = (room, viewerId) => ({
   memory: room.memory,
   typing: room.typing,
   waterball: room.waterball,
+  catchmind: room.game === 'catchmind' ? catchmindView(room, viewerId) : null,
   gomoku: room.gomoku
 });
 const emitRoom = room => {
@@ -138,7 +144,7 @@ const clearTimers = room => {
   room.timers=[]; room.timeouts=[];
 };
 const normalizeBingoSize = value => [3,4,5].includes(Number(value)) ? Number(value) : 5;
-const createRoom = (socket, nickname, game, topic='', bingoSize=5) => {
+const createRoom = (socket, nickname, game, topic='', bingoSize=5, catchmindRounds=3) => {
   const code=makeCode();
   const player={id:socket.id,nickname,color:COLORS[0],ready:false,alive:true,x:50,progress:0,finishedAt:null,survived:null,stone:null};
   bingoSize=normalizeBingoSize(bingoSize);
@@ -153,6 +159,7 @@ const createRoom = (socket, nickname, game, topic='', bingoSize=5) => {
     memory:newMemoryState(),
     typing:newTypingState(),
     waterball:newWaterballState(),
+    catchmind:newCatchmindState(catchmindRounds),
     gomoku:{board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null},
     timers:[],timeouts:[]};
   rooms.set(code,room); socket.join(code); socket.data.roomCode=code; return room;
@@ -162,10 +169,10 @@ const isHost = (room,socket) => room?.hostId===socket.id;
 const reject = (socket,msg) => socket.emit('toast',{type:'error',message:msg});
 
 io.on('connection', socket => {
-  socket.on('room:create', ({nickname,game,topic,bingoSize}, cb=()=>{}) => {
+  socket.on('room:create', ({nickname,game,topic,bingoSize,catchmindRounds}, cb=()=>{}) => {
     nickname=clean(nickname); if(!nickname) return cb({ok:false,message:'닉네임을 입력해주세요.'});
     if(!GAMES.has(game)) return cb({ok:false,message:'게임을 선택해주세요.'});
-    const room=createRoom(socket,nickname,game,topic,bingoSize); emitRoom(room); cb({ok:true,code:room.code});
+    const room=createRoom(socket,nickname,game,topic,bingoSize,catchmindRounds); emitRoom(room); cb({ok:true,code:room.code});
   });
 
   socket.on('room:join', ({nickname,code}, cb=()=>{}) => {
@@ -183,13 +190,13 @@ io.on('connection', socket => {
   });
 
   socket.on('room:leave', () => leaveRoom(socket));
-  socket.on('room:chooseGame', ({game,topic,bingoSize}) => {
+  socket.on('room:chooseGame', ({game,topic,bingoSize,catchmindRounds}) => {
     const room=getRoom(socket); if(!isHost(room,socket)||!GAMES.has(game)) return;
     clearTimers(room); room.game=game; room.topic=clean(topic,40); room.bingoSize=game==='bingo'?normalizeBingoSize(bingoSize):5; room.phase='lobby'; resetPlayerStates(room);
     room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};
     room.bingoBoards=new Map();room.bingoMarks=new Map();room.bingoLines=new Map();room.bingoTarget=1;room.bingoRanking=[];room.bingoTurnOrder=[];room.bingoTurnIndex=0;room.bingoCalledWords=[];
     for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}
-    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();room.typing=newTypingState();room.waterball=newWaterballState();
+    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();room.typing=newTypingState();room.waterball=newWaterballState();room.catchmind=newCatchmindState(catchmindRounds);
     room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null}; assignGomoku(room); emitRoom(room);
   });
   socket.on('room:selecting', () => { const room=getRoom(socket); if(isHost(room,socket)){room.phase='selecting';emitRoom(room);} });
@@ -384,6 +391,47 @@ io.on('connection', socket => {
     io.to(room.code).emit('typing:sync',{words:room.typing.words,elapsed:now-room.typing.startedAt,scores:room.typing.scores});
   });
 
+  socket.on('catchmind:rounds', rounds => {
+    const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='catchmind'||room.phase!=='lobby')return;
+    room.catchmind.rounds=normalizeCatchmindRounds(rounds); emitRoom(room);
+  });
+  socket.on('catchmind:start', () => {
+    const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='catchmind'||room.phase!=='lobby')return;
+    if(room.players.size<2)return reject(socket,'캐치마인드는 2명 이상 참여해야 합니다.');
+    startCatchmindGame(room);
+  });
+  socket.on('catchmind:choose', index => {
+    const room=getRoom(socket); if(!room||room.game!=='catchmind'||room.phase!=='playing')return;
+    const c=room.catchmind;if(c.stage!=='choosing'||c.drawerId!==socket.id)return;
+    const i=Number(index);if(!Number.isInteger(i)||i<0||i>=c.choices.length)return;
+    beginCatchmindDrawing(room,c.choices[i]);
+  });
+  socket.on('catchmind:draw', seg => {
+    const room=getRoom(socket);if(!room||room.game!=='catchmind'||room.phase!=='playing')return;
+    const c=room.catchmind;if(c.stage!=='drawing'||c.drawerId!==socket.id)return;
+    const x1=Math.max(0,Math.min(1,Number(seg?.x1))),y1=Math.max(0,Math.min(1,Number(seg?.y1))),x2=Math.max(0,Math.min(1,Number(seg?.x2))),y2=Math.max(0,Math.min(1,Number(seg?.y2)));
+    if([x1,y1,x2,y2].some(Number.isNaN))return;
+    const colors=['#ff3b30','#ff9500','#ffd60a','#34c759','#0a84ff','#5856d6','#af52de','#111111','#ffffff'];
+    const color=colors.includes(seg?.color)?seg.color:'#111111';const width=Math.max(2,Math.min(18,Number(seg?.width)||6));
+    const safe={x1,y1,x2,y2,color,width};c.strokes.push(safe);if(c.strokes.length>6000)c.strokes.shift();
+    socket.to(room.code).emit('catchmind:stroke',safe);
+  });
+  socket.on('catchmind:clear', () => {
+    const room=getRoom(socket);if(!room||room.game!=='catchmind'||room.phase!=='playing')return;const c=room.catchmind;
+    if(c.stage!=='drawing'||c.drawerId!==socket.id)return;c.strokes=[];io.to(room.code).emit('catchmind:clear');
+  });
+  socket.on('catchmind:guess', raw => {
+    const room=getRoom(socket);if(!room||room.game!=='catchmind'||room.phase!=='playing')return;const c=room.catchmind,p=room.players.get(socket.id);
+    if(!p||c.stage!=='drawing'||c.drawerId===socket.id)return;
+    const text=clean(raw,60);if(!text)return;if(c.guesses.some(g=>g.id===socket.id))return;
+    const correct=normalizeCatchAnswer(text)===normalizeCatchAnswer(c.word);
+    if(correct){const rank=c.guesses.length+1,points=catchmindPoints(rank);c.guesses.push({id:p.id,nickname:p.nickname,rank,points,at:Date.now()});c.scores[p.id]=(c.scores[p.id]||0)+points;c.chat.push({type:'correct',nickname:p.nickname,text:'정답!',at:Date.now()});
+      io.to(room.code).emit('catchmind:correct',{id:p.id,nickname:p.nickname,rank,points});
+      const guessers=room.players.size-1;if(c.guesses.length>=guessers){room.timeouts.push(setTimeout(()=>finishCatchmindTurn(room),900));}
+    }else c.chat.push({type:'guess',nickname:p.nickname,text,at:Date.now()});
+    if(c.chat.length>60)c.chat=c.chat.slice(-60);emitRoom(room);
+  });
+
   socket.on('waterball:start', () => {
     const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='waterball'||room.phase!=='lobby')return;
     if(room.players.size<2)return reject(socket,'물풍선 대전은 2명 이상 입장해주세요.');
@@ -483,6 +531,24 @@ function newBombState(){return {holderId:null,round:0,passCount:0,eliminated:[],
 function newMemoryState(){return {cards:[],order:[],turnIndex:0,flipped:[],scores:{},busy:false};}
 function normalizeTyping(v){return String(v??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('en-US');}
 function newTypingState(){return {category:'medical',startedAt:null,endsAt:null,durationMs:60000,words:[],scores:{},claims:[],ranking:[],seq:0,speedLevel:1};}
+function normalizeCatchmindRounds(v){return Math.max(3,Math.min(5,Number(v)||3));}
+function newCatchmindState(rounds=3){return {rounds:normalizeCatchmindRounds(rounds),stage:'lobby',round:0,turn:0,totalTurns:0,turns:[],drawerId:null,choices:[],word:null,wordLength:0,chooseDeadline:null,drawDeadline:null,hintMask:'',revealed:[],guesses:[],chat:[],scores:{},strokes:[],usedWords:[],turnResult:null,ranking:[]};}
+function catchmindView(room,viewerId){const c=room.catchmind||newCatchmindState();const isDrawer=c.drawerId===viewerId;return {...c,choices:(c.stage==='choosing'&&isDrawer)?c.choices:[],word:(isDrawer||c.stage==='between'||c.stage==='finished')?c.word:null,strokes:c.strokes||[]};}
+function normalizeCatchAnswer(v){return String(v||'').normalize('NFKC').replace(/\s+/g,'').toLocaleLowerCase('ko-KR');}
+function catchmindPoints(rank){return [40,30,15,5,5,3,3,2,2][rank-1]||2;}
+function catchWordLength(w){return [...String(w||'').replace(/\s/g,'')].length;}
+function makeCatchMask(word,revealed=[]){let pos=0;return [...String(word||'')].map(ch=>{if(/\s/.test(ch))return '  ';const out=revealed.includes(pos)?ch:'＿';pos++;return out}).join(' ');}
+function pickCatchChoices(c){const pool=[...CATCHMIND_WORDS.medical,...CATCHMIND_WORDS.daily].filter(w=>!c.usedWords.includes(w));const out=[];while(pool.length&&out.length<3){const i=Math.floor(Math.random()*pool.length);out.push(pool.splice(i,1)[0]);}if(out.length<3){c.usedWords=[];return pickCatchChoices(c);}c.usedWords.push(...out);return out;}
+function startCatchmindGame(room){clearTimers(room);room.phase='playing';const c=room.catchmind=newCatchmindState(room.catchmind?.rounds||3);c.scores=Object.fromEntries([...room.players.keys()].map(id=>[id,0]));for(let r=1;r<=c.rounds;r++){const order=shuffle([...room.players.keys()]);for(const id of order)c.turns.push({round:r,drawerId:id});}c.totalTurns=c.turns.length;c.turn=0;startCatchmindTurn(room);}
+function startCatchmindTurn(room){const c=room.catchmind;if(c.turn>=c.totalTurns)return finishCatchmindGame(room);const t=c.turns[c.turn],drawer=room.players.get(t.drawerId);if(!drawer){c.turn++;return startCatchmindTurn(room);}c.round=t.round;c.drawerId=t.drawerId;c.stage='choosing';c.choices=pickCatchChoices(c);c.word=null;c.wordLength=0;c.chooseDeadline=Date.now()+10000;c.drawDeadline=null;c.hintMask='';c.revealed=[];c.guesses=[];c.chat=[];c.strokes=[];c.turnResult=null;emitRoom(room);room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code)||room.game!=='catchmind'||room.catchmind.stage!=='choosing')return;const choice=room.catchmind.choices[Math.floor(Math.random()*room.catchmind.choices.length)];beginCatchmindDrawing(room,choice);},10100));}
+function beginCatchmindDrawing(room,word){const c=room.catchmind;if(c.stage!=='choosing')return;c.stage='drawing';c.word=word;c.wordLength=catchWordLength(word);c.chooseDeadline=null;c.drawDeadline=Date.now()+45000;c.revealed=[];c.hintMask=makeCatchMask(word,[]);c.guesses=[];c.chat=[];c.strokes=[];emitRoom(room);
+  const revealAt=(delay,count)=>room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code)||room.game!=='catchmind'||room.catchmind.stage!=='drawing'||room.catchmind.guesses.length)return;revealCatchHint(room,count);},delay));
+  revealAt(23000,1);revealAt(31000,2);revealAt(38000,3);room.timeouts.push(setTimeout(()=>finishCatchmindTurn(room),45100));
+}
+function revealCatchHint(room,count){const c=room.catchmind,n=c.wordLength;if(!n)return;const hidden=[...Array(n).keys()].filter(i=>!c.revealed.includes(i));while(c.revealed.length<count&&hidden.length){const j=Math.floor(Math.random()*hidden.length);c.revealed.push(hidden.splice(j,1)[0]);}c.hintMask=makeCatchMask(c.word,c.revealed);emitRoom(room);}
+function finishCatchmindTurn(room){const c=room.catchmind;if(c.stage!=='drawing')return;c.stage='between';c.drawDeadline=null;if(!c.guesses.length){c.scores[c.drawerId]=(c.scores[c.drawerId]||0)+30;}c.turnResult={word:c.word,noCorrect:!c.guesses.length,drawerId:c.drawerId,guesses:[...c.guesses]};emitRoom(room);room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code)||room.game!=='catchmind')return;room.catchmind.turn++;startCatchmindTurn(room);},3200));}
+function finishCatchmindGame(room){const c=room.catchmind;c.stage='finished';room.phase='finished';c.ranking=[...room.players.values()].map(p=>({id:p.id,nickname:p.nickname,score:c.scores[p.id]||0})).sort((a,b)=>b.score-a.score);c.word=null;c.choices=[];c.strokes=[];emitRoom(room);}
+
 function typingCategoryLabel(k){return k==='medical'?'의학용어':k==='daily'?'일상용어':'사자성어';}
 function startTypingGame(room){
   const now=Date.now(),durationMs=60000,category=['medical','daily','idiom'].includes(room.typing.category)?room.typing.category:'medical';
@@ -540,7 +606,7 @@ function spawnDodgeBatch(room){
   room.timeouts.push(setTimeout(()=>spawnDodgeBatch(room),delay));
 }
 
-function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;room.bingoTurnOrder=[];room.bingoTurnIndex=0;room.bingoCalledWords=[];for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='typing')room.typing=newTypingState();if(room.game==='waterball')room.waterball=newWaterballState();if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
+function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;room.bingoTurnOrder=[];room.bingoTurnIndex=0;room.bingoCalledWords=[];for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='typing')room.typing=newTypingState();if(room.game==='waterball')room.waterball=newWaterballState();if(room.game==='catchmind')room.catchmind=newCatchmindState(room.catchmind?.rounds||3);if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
 function findWin(board,r,c,s){const dirs=[[1,0],[0,1],[1,1],[1,-1]];for(const[dr,dc]of dirs){const line=[[r,c]];for(const sign of[-1,1])for(let k=1;k<5;k++){const rr=r+dr*k*sign,cc=c+dc*k*sign;if(board[rr]?.[cc]===s)line.push([rr,cc]);else break;}if(line.length>=5)return line;}return null;}
-function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);if(room.bingoTurnOrder?.length){const removed=room.bingoTurnOrder.indexOf(socket.id);room.bingoTurnOrder=room.bingoTurnOrder.filter(id=>id!==socket.id);if(removed>=0&&removed<room.bingoTurnIndex)room.bingoTurnIndex--;if(room.bingoTurnOrder.length)room.bingoTurnIndex=Math.max(0,room.bingoTurnIndex%room.bingoTurnOrder.length);else room.bingoTurnIndex=0;}socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);if(room.game==='waterball'&&room.phase==='playing'){const wp=room.waterball?.players?.[socket.id];if(wp){wp.alive=false;wp.diedAt=Date.now();}finishWaterballIfNeeded(room);}emitRoom(room);}
+function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);if(room.bingoTurnOrder?.length){const removed=room.bingoTurnOrder.indexOf(socket.id);room.bingoTurnOrder=room.bingoTurnOrder.filter(id=>id!==socket.id);if(removed>=0&&removed<room.bingoTurnIndex)room.bingoTurnIndex--;if(room.bingoTurnOrder.length)room.bingoTurnIndex=Math.max(0,room.bingoTurnIndex%room.bingoTurnOrder.length);else room.bingoTurnIndex=0;}socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);if(room.game==='waterball'&&room.phase==='playing'){const wp=room.waterball?.players?.[socket.id];if(wp){wp.alive=false;wp.diedAt=Date.now();}finishWaterballIfNeeded(room);}if(room.game==='catchmind'&&room.phase==='playing'&&room.catchmind?.drawerId===socket.id){room.catchmind.turn++;startCatchmindTurn(room);return;}emitRoom(room);}
 server.listen(PORT,()=>console.log(`Server running on ${PORT}`));
