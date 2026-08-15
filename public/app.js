@@ -203,7 +203,7 @@ function typingView(){
 }
 function typingScoresHtml(){const r=state.room,t=r?.typing||{},scores=t.scores||{};return (r?.players||[]).slice().sort((a,b)=>(scores[b.id]?.count||0)-(scores[a.id]?.count||0)).map(p=>`<span class="player-chip ${p.id===socket.id?'ready':''}" data-typing-score="${p.id}">${esc(p.nickname)} <b>${scores[p.id]?.count||0}</b></span>`).join('')}
 function syncTypingScores(){const box=document.getElementById('typingScores');if(box)box.innerHTML=typingScoresHtml()}
-function normalizeTypingClient(v){return String(v??'').trim().replace(/\s+/g,' ').toLowerCase()}
+function normalizeTypingClient(v){return String(v??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('en-US')}
 function maybeSubmitTyping(el){if(state.typingComposing||state.room?.game!=='typing'||state.room.phase!=='playing')return;const v=normalizeTypingClient(el.value);if(!v)return;const match=(state.room.typing?.words||[]).some(w=>normalizeTypingClient(w.text)===v);if(match){socket.emit('typing:submit',el.value);el.value=''}}
 function submitTypingInput(){const el=document.getElementById('typingInput');if(!el||state.typingComposing)return;const v=el.value.trim();if(v){socket.emit('typing:submit',v);el.value=''}}
 function flashTypingGain(word){const el=document.getElementById('typingGain');if(!el)return;el.textContent=`+1 ${word}`;el.classList.remove('show');void el.offsetWidth;el.classList.add('show')}
