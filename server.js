@@ -15,7 +15,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','bomb','memory','typing','gomoku']);
+const GAMES = new Set(['ladder','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','gomoku']);
 
 const LIAR_WORDS = {
   '음식':['김치찌개','삼겹살','떡볶이','비빔밥','치킨','피자','라면','김밥','돈까스','냉면','짜장면','카레'],
@@ -115,6 +115,7 @@ const roomView = (room, viewerId) => ({
   bomb: room.bomb,
   memory: room.memory,
   typing: room.typing,
+  waterball: room.waterball,
   gomoku: room.gomoku
 });
 const emitRoom = room => {
@@ -147,6 +148,7 @@ const createRoom = (socket, nickname, game, topic='', bingoSize=5) => {
     bomb:newBombState(),
     memory:newMemoryState(),
     typing:newTypingState(),
+    waterball:newWaterballState(),
     gomoku:{board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null},
     timers:[],timeouts:[]};
   rooms.set(code,room); socket.join(code); socket.data.roomCode=code; return room;
@@ -183,7 +185,7 @@ io.on('connection', socket => {
     room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};
     room.bingoBoards=new Map();room.bingoMarks=new Map();room.bingoLines=new Map();room.bingoTarget=1;room.bingoRanking=[];
     for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}
-    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();room.typing=newTypingState();
+    room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();room.typing=newTypingState();room.waterball=newWaterballState();
     room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null}; assignGomoku(room); emitRoom(room);
   });
   socket.on('room:selecting', () => { const room=getRoom(socket); if(isHost(room,socket)){room.phase='selecting';emitRoom(room);} });
@@ -351,12 +353,67 @@ io.on('connection', socket => {
     io.to(room.code).emit('typing:sync',{words:room.typing.words,elapsed:now-room.typing.startedAt,scores:room.typing.scores});
   });
 
+  socket.on('waterball:start', () => {
+    const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='waterball'||room.phase!=='lobby')return;
+    if(room.players.size<2)return reject(socket,'물풍선 대전은 2명 이상 입장해주세요.');
+    startWaterball(room);
+  });
+  socket.on('waterball:move', dir => {
+    const room=getRoom(socket); if(!room||room.game!=='waterball'||room.phase!=='playing')return;
+    const wp=room.waterball.players[socket.id]; if(!wp?.alive)return;
+    const now=Date.now(),delay=Math.max(80,170-(wp.speed-1)*22); if(now-(wp.lastMoveAt||0)<delay)return;
+    const d={up:[-1,0],down:[1,0],left:[0,-1],right:[0,1]}[dir]; if(!d)return;
+    const nr=wp.r+d[0],nc=wp.c+d[1]; if(!waterCanWalk(room,nr,nc,socket.id))return;
+    wp.r=nr;wp.c=nc;wp.lastMoveAt=now; collectWaterItem(room,wp); emitRoom(room);
+  });
+  socket.on('waterball:bomb', () => {
+    const room=getRoom(socket); if(!room||room.game!=='waterball'||room.phase!=='playing')return;
+    const wp=room.waterball.players[socket.id]; if(!wp?.alive)return;
+    const active=room.waterball.bombs.filter(b=>b.ownerId===socket.id&&!b.exploded).length;
+    if(active>=wp.maxBombs)return reject(socket,'설치 가능한 물풍선을 모두 사용 중이에요.');
+    if(room.waterball.bombs.some(b=>!b.exploded&&b.r===wp.r&&b.c===wp.c))return;
+    const bomb={id:`wb-${room.code}-${++room.waterball.seq}`,ownerId:socket.id,r:wp.r,c:wp.c,range:wp.range,placedAt:Date.now(),explodeAt:Date.now()+2200,exploded:false};
+    room.waterball.bombs.push(bomb); emitRoom(room); scheduleWaterExplosion(room,bomb);
+  });
+
   socket.on('gomoku:place', ({r,c}) => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='gomoku'||room.phase==='finished'||room.players.size!==2||!p?.stone)return; if(room.phase==='lobby')room.phase='playing'; if(p.stone!==room.gomoku.turn||room.gomoku.board[r]?.[c])return; room.gomoku.board[r][c]=p.stone; const line=findWin(room.gomoku.board,r,c,p.stone); if(line){room.gomoku.winner=p.nickname;room.gomoku.winLine=line;room.phase='finished';} else room.gomoku.turn=p.stone==='black'?'white':'black'; emitRoom(room); });
 
   socket.on('disconnect', () => leaveRoom(socket));
 });
 
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+const WATER_ROWS=11,WATER_COLS=13;
+const WATER_SPAWNS=[[1,1],[1,11],[9,1],[9,11],[1,6],[9,6],[5,1],[5,11],[3,3],[7,9]];
+function newWaterballState(){return {rows:WATER_ROWS,cols:WATER_COLS,tiles:[],players:{},bombs:[],flames:[],items:[],ranking:[],winner:null,startedAt:null,seq:0};}
+function startWaterball(room){
+  clearTimers(room); room.phase='countdown'; resetPlayerStates(room); const shuffled=shuffle(WATER_SPAWNS);
+  const tiles=Array.from({length:WATER_ROWS},()=>Array(WATER_COLS).fill('floor'));
+  for(let r=0;r<WATER_ROWS;r++)for(let c=0;c<WATER_COLS;c++){
+    if(r===0||c===0||r===WATER_ROWS-1||c===WATER_COLS-1||(r%2===0&&c%2===0))tiles[r][c]='hard';
+    else if(Math.random()<.62)tiles[r][c]='soft';
+  }
+  const safe=new Set(); for(const [r,c] of WATER_SPAWNS){safe.add(`${r},${c}`);safe.add(`${r+1},${c}`);safe.add(`${r-1},${c}`);safe.add(`${r},${c+1}`);safe.add(`${r},${c-1}`)}
+  for(const k of safe){const [r,c]=k.split(',').map(Number);if(tiles[r]?.[c]&&tiles[r][c]!=='hard')tiles[r][c]='floor';}
+  const players={};let i=0;for(const p of room.players.values()){const [r,c]=shuffled[i++%shuffled.length];p.alive=true;players[p.id]={id:p.id,nickname:p.nickname,color:p.color,r,c,alive:true,maxBombs:1,range:2,speed:1,lastMoveAt:0,diedAt:null};}
+  room.waterball={rows:WATER_ROWS,cols:WATER_COLS,tiles,players,bombs:[],flames:[],items:[],ranking:[],winner:null,startedAt:null,seq:0}; emitRoom(room);
+  room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code)||room.game!=='waterball')return;room.phase='playing';room.waterball.startedAt=Date.now();emitRoom(room);},3500));
+}
+function waterCanWalk(room,r,c,playerId){const w=room.waterball;if(r<0||c<0||r>=w.rows||c>=w.cols)return false;if(w.tiles[r][c]!=='floor')return false;if(w.bombs.some(b=>!b.exploded&&b.r===r&&b.c===c))return false;return true;}
+function collectWaterItem(room,wp){const w=room.waterball,idx=w.items.findIndex(x=>x.r===wp.r&&x.c===wp.c);if(idx<0)return;const it=w.items.splice(idx,1)[0];if(it.type==='range')wp.range=Math.min(6,wp.range+1);if(it.type==='bomb')wp.maxBombs=Math.min(5,wp.maxBombs+1);if(it.type==='speed')wp.speed=Math.min(5,wp.speed+1);}
+function scheduleWaterExplosion(room,bomb){const ms=Math.max(0,bomb.explodeAt-Date.now());room.timeouts.push(setTimeout(()=>explodeWaterBomb(room,bomb.id),ms));}
+function explodeWaterBomb(room,bombId){
+  if(!rooms.has(room.code)||room.game!=='waterball'||room.phase!=='playing')return;const w=room.waterball,b=w.bombs.find(x=>x.id===bombId);if(!b||b.exploded)return;b.exploded=true;
+  const cells=[{r:b.r,c:b.c}],dirs=[[1,0],[-1,0],[0,1],[0,-1]],chains=[];
+  for(const [dr,dc] of dirs){for(let n=1;n<=b.range;n++){const r=b.r+dr*n,c=b.c+dc*n;if(r<0||c<0||r>=w.rows||c>=w.cols)break;const tile=w.tiles[r][c];if(tile==='hard')break;cells.push({r,c});const other=w.bombs.find(x=>!x.exploded&&x.r===r&&x.c===c);if(other)chains.push(other.id);if(tile==='soft'){w.tiles[r][c]='floor';if(Math.random()<.38){const types=['range','bomb','speed'];w.items.push({id:`wi-${++w.seq}`,r,c,type:types[Math.floor(Math.random()*types.length)]});}break;}}}
+  const bornAt=Date.now(),flameIds=cells.map(x=>`wf-${++w.seq}`);cells.forEach((x,i)=>w.flames.push({id:flameIds[i],...x,bornAt,endsAt:bornAt+700}));
+  for(const wp of Object.values(w.players)){if(wp.alive&&cells.some(x=>x.r===wp.r&&x.c===wp.c)){wp.alive=false;wp.diedAt=bornAt;const p=room.players.get(wp.id);if(p)p.alive=false;}}
+  w.bombs=w.bombs.filter(x=>!x.exploded);emitRoom(room);chains.forEach(id=>room.timeouts.push(setTimeout(()=>explodeWaterBomb(room,id),70)));
+  room.timeouts.push(setTimeout(()=>{w.flames=w.flames.filter(f=>!flameIds.includes(f.id));finishWaterballIfNeeded(room);if(room.phase==='playing')emitRoom(room);},720));finishWaterballIfNeeded(room);
+}
+function finishWaterballIfNeeded(room){
+  if(room.game!=='waterball'||room.phase!=='playing')return;const w=room.waterball,alive=Object.values(w.players).filter(p=>p.alive);if(alive.length>1)return;
+  room.phase='finished';const dead=Object.values(w.players).filter(p=>!p.alive).sort((a,b)=>(b.diedAt||0)-(a.diedAt||0));w.winner=alive[0]?.nickname||null;w.ranking=[];if(alive[0])w.ranking.push({id:alive[0].id,nickname:alive[0].nickname,place:1,status:'생존'});dead.forEach((p,i)=>w.ranking.push({id:p.id,nickname:p.nickname,place:(alive.length?2:1)+i,status:'탈락'}));clearTimers(room);emitRoom(room);
+}
 function newBombState(){return {holderId:null,round:0,passCount:0,eliminated:[],winner:null,explodesAt:null};}
 function newMemoryState(){return {cards:[],order:[],turnIndex:0,flipped:[],scores:{},busy:false};}
 function normalizeTyping(v){return String(v??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('en-US');}
@@ -417,7 +474,7 @@ function spawnDodgeBatch(room){
   room.timeouts.push(setTimeout(()=>spawnDodgeBatch(room),delay));
 }
 
-function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='typing')room.typing=newTypingState();if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
+function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='ladder')room.ladder={names:[],results:[],paths:[],traces:[],rungs:[],revealed:[]};if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='typing')room.typing=newTypingState();if(room.game==='waterball')room.waterball=newWaterballState();if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}}
 function findWin(board,r,c,s){const dirs=[[1,0],[0,1],[1,1],[1,-1]];for(const[dr,dc]of dirs){const line=[[r,c]];for(const sign of[-1,1])for(let k=1;k<5;k++){const rr=r+dr*k*sign,cc=c+dc*k*sign;if(board[rr]?.[cc]===s)line.push([rr,cc]);else break;}if(line.length>=5)return line;}return null;}
-function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);emitRoom(room);}
+function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);if(room.game==='waterball'&&room.phase==='playing'){const wp=room.waterball?.players?.[socket.id];if(wp){wp.alive=false;wp.diedAt=Date.now();}finishWaterballIfNeeded(room);}emitRoom(room);}
 server.listen(PORT,()=>console.log(`Server running on ${PORT}`));
