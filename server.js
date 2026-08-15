@@ -361,7 +361,7 @@ io.on('connection', socket => {
   socket.on('waterball:move', dir => {
     const room=getRoom(socket); if(!room||room.game!=='waterball'||room.phase!=='playing')return;
     const wp=room.waterball.players[socket.id]; if(!wp?.alive)return;
-    const now=Date.now(),delay=Math.max(80,170-(wp.speed-1)*22); if(now-(wp.lastMoveAt||0)<delay)return;
+    const now=Date.now(),delay=waterMoveDelay(wp,now); if(now-(wp.lastMoveAt||0)<delay)return;
     const d={up:[-1,0],down:[1,0],left:[0,-1],right:[0,1]}[dir]; if(!d)return;
     const nr=wp.r+d[0],nc=wp.c+d[1]; if(!waterCanWalk(room,nr,nc,socket.id))return;
     wp.r=nr;wp.c=nc;wp.lastMoveAt=now; collectWaterItem(room,wp); emitRoom(room);
@@ -384,31 +384,65 @@ io.on('connection', socket => {
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 const WATER_ROWS=11,WATER_COLS=13;
 const WATER_SPAWNS=[[1,1],[1,11],[9,1],[9,11],[1,6],[9,6],[5,1],[5,11],[3,3],[7,9]];
-function newWaterballState(){return {rows:WATER_ROWS,cols:WATER_COLS,tiles:[],players:{},bombs:[],flames:[],items:[],ranking:[],winner:null,startedAt:null,seq:0};}
+function newWaterballState(){return {rows:WATER_ROWS,cols:WATER_COLS,tiles:[],players:{},bombs:[],flames:[],items:[],ranking:[],winner:null,startedAt:null,seq:0,mapVariant:0,finalDuel:false};}
 function startWaterball(room){
   clearTimers(room); room.phase='countdown'; resetPlayerStates(room); const shuffled=shuffle(WATER_SPAWNS);
+  const mapVariant=Math.floor(Math.random()*4);
   const tiles=Array.from({length:WATER_ROWS},()=>Array(WATER_COLS).fill('floor'));
+  const safe=new Set(); for(const [r,c] of WATER_SPAWNS){safe.add(`${r},${c}`);safe.add(`${r+1},${c}`);safe.add(`${r-1},${c}`);safe.add(`${r},${c+1}`);safe.add(`${r},${c-1}`)}
+  const softChance=[.62,.54,.68,.48][mapVariant];
   for(let r=0;r<WATER_ROWS;r++)for(let c=0;c<WATER_COLS;c++){
     if(r===0||c===0||r===WATER_ROWS-1||c===WATER_COLS-1||(r%2===0&&c%2===0))tiles[r][c]='hard';
-    else if(Math.random()<.62)tiles[r][c]='soft';
+    else if(Math.random()<softChance)tiles[r][c]='soft';
   }
-  const safe=new Set(); for(const [r,c] of WATER_SPAWNS){safe.add(`${r},${c}`);safe.add(`${r+1},${c}`);safe.add(`${r-1},${c}`);safe.add(`${r},${c+1}`);safe.add(`${r},${c-1}`)}
-  for(const k of safe){const [r,c]=k.split(',').map(Number);if(tiles[r]?.[c]&&tiles[r][c]!=='hard')tiles[r][c]='floor';}
-  const players={};let i=0;for(const p of room.players.values()){const [r,c]=shuffled[i++%shuffled.length];p.alive=true;players[p.id]={id:p.id,nickname:p.nickname,color:p.color,r,c,alive:true,maxBombs:1,range:2,speed:1,lastMoveAt:0,diedAt:null};}
-  room.waterball={rows:WATER_ROWS,cols:WATER_COLS,tiles,players,bombs:[],flames:[],items:[],ranking:[],winner:null,startedAt:null,seq:0}; emitRoom(room);
-  room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code)||room.game!=='waterball')return;room.phase='playing';room.waterball.startedAt=Date.now();emitRoom(room);},3500));
+  // 매 판 지형의 분위기가 조금씩 달라지도록 추가 고정벽 패턴을 섞는다.
+  for(let r=1;r<WATER_ROWS-1;r++)for(let c=1;c<WATER_COLS-1;c++){
+    if(tiles[r][c]==='hard'||safe.has(`${r},${c}`))continue;
+    let extra=false;
+    if(mapVariant===1)extra=(r%4===1&&c%4===0&&Math.random()<.48);
+    else if(mapVariant===2)extra=((r+c)%5===0&&Math.random()<.34);
+    else if(mapVariant===3)extra=((r*3+c*2)%11===0&&Math.random()<.28);
+    if(extra)tiles[r][c]='hard';
+  }
+  for(const k of safe){const [r,c]=k.split(',').map(Number);if(r>0&&c>0&&r<WATER_ROWS-1&&c<WATER_COLS-1)tiles[r][c]='floor';}
+  const players={};let i=0;for(const p of room.players.values()){const [r,c]=shuffled[i++%shuffled.length];p.alive=true;players[p.id]={id:p.id,nickname:p.nickname,color:p.color,r,c,alive:true,maxBombs:1,range:2,speed:1,lastMoveAt:0,diedAt:null,slowUntil:0,hasteUntil:0,invincibleUntil:0};}
+  room.waterball={rows:WATER_ROWS,cols:WATER_COLS,tiles,players,bombs:[],flames:[],items:[],ranking:[],winner:null,startedAt:null,seq:0,mapVariant,finalDuel:false}; emitRoom(room);
+  room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code)||room.game!=='waterball')return;room.phase='playing';room.waterball.startedAt=Date.now();maybeStartWaterFinalDuel(room);emitRoom(room);},3500));
 }
 function waterCanWalk(room,r,c,playerId){const w=room.waterball;if(r<0||c<0||r>=w.rows||c>=w.cols)return false;if(w.tiles[r][c]!=='floor')return false;if(w.bombs.some(b=>!b.exploded&&b.r===r&&b.c===c))return false;return true;}
-function collectWaterItem(room,wp){const w=room.waterball,idx=w.items.findIndex(x=>x.r===wp.r&&x.c===wp.c);if(idx<0)return;const it=w.items.splice(idx,1)[0];if(it.type==='range')wp.range=Math.min(6,wp.range+1);if(it.type==='bomb')wp.maxBombs=Math.min(5,wp.maxBombs+1);if(it.type==='speed')wp.speed=Math.min(5,wp.speed+1);}
+function waterMoveDelay(wp,now=Date.now()){
+  let delay=Math.max(80,170-(wp.speed-1)*22);
+  if((wp.slowUntil||0)>now)delay=Math.round(delay*1.65);
+  if((wp.hasteUntil||0)>now)delay=Math.max(55,Math.round(delay*.68));
+  return delay;
+}
+function collectWaterItem(room,wp){
+  const w=room.waterball,idx=w.items.findIndex(x=>x.r===wp.r&&x.c===wp.c);if(idx<0)return;const it=w.items.splice(idx,1)[0],now=Date.now();
+  if(it.type==='range')wp.range=Math.min(8,wp.range+1);
+  if(it.type==='bomb')wp.maxBombs=Math.min(8,wp.maxBombs+1);
+  if(it.type==='speed')wp.speed=Math.min(5,wp.speed+1);
+  if(it.type==='turtle')wp.slowUntil=now+5500;
+  if(it.type==='rabbit')wp.hasteUntil=now+5500;
+  if(it.type==='rainbow')wp.invincibleUntil=now+4200;
+  if(['turtle','rabbit','rainbow'].includes(it.type))room.timeouts.push(setTimeout(()=>{if(rooms.has(room.code)&&room.game==='waterball'&&room.phase==='playing')emitRoom(room);},5600));
+}
+function maybeStartWaterFinalDuel(room){
+  if(room.game!=='waterball'||room.phase!=='playing')return;const w=room.waterball;if(w.finalDuel)return;
+  const alive=Object.values(w.players).filter(p=>p.alive);if(alive.length!==2)return;
+  w.finalDuel=true;w.finalDuelAt=Date.now();
+  for(const p of alive){p.maxBombs=Math.min(10,p.maxBombs+3);p.range=Math.min(10,p.range+(1+Math.floor(Math.random()*2)));}
+  io.to(room.code).emit('waterball:final',{players:alive.map(p=>p.nickname)});
+  emitRoom(room);
+}
 function scheduleWaterExplosion(room,bomb){const ms=Math.max(0,bomb.explodeAt-Date.now());room.timeouts.push(setTimeout(()=>explodeWaterBomb(room,bomb.id),ms));}
 function explodeWaterBomb(room,bombId){
   if(!rooms.has(room.code)||room.game!=='waterball'||room.phase!=='playing')return;const w=room.waterball,b=w.bombs.find(x=>x.id===bombId);if(!b||b.exploded)return;b.exploded=true;
   const cells=[{r:b.r,c:b.c}],dirs=[[1,0],[-1,0],[0,1],[0,-1]],chains=[];
-  for(const [dr,dc] of dirs){for(let n=1;n<=b.range;n++){const r=b.r+dr*n,c=b.c+dc*n;if(r<0||c<0||r>=w.rows||c>=w.cols)break;const tile=w.tiles[r][c];if(tile==='hard')break;cells.push({r,c});const other=w.bombs.find(x=>!x.exploded&&x.r===r&&x.c===c);if(other)chains.push(other.id);if(tile==='soft'){w.tiles[r][c]='floor';if(Math.random()<.38){const types=['range','bomb','speed'];w.items.push({id:`wi-${++w.seq}`,r,c,type:types[Math.floor(Math.random()*types.length)]});}break;}}}
+  for(const [dr,dc] of dirs){for(let n=1;n<=b.range;n++){const r=b.r+dr*n,c=b.c+dc*n;if(r<0||c<0||r>=w.rows||c>=w.cols)break;const tile=w.tiles[r][c];if(tile==='hard')break;cells.push({r,c});const other=w.bombs.find(x=>!x.exploded&&x.r===r&&x.c===c);if(other)chains.push(other.id);if(tile==='soft'){w.tiles[r][c]='floor';if(Math.random()<.46){const types=['range','bomb','speed','turtle','rabbit','rainbow'];w.items.push({id:`wi-${++w.seq}`,r,c,type:types[Math.floor(Math.random()*types.length)]});}break;}}}
   const bornAt=Date.now(),flameIds=cells.map(x=>`wf-${++w.seq}`);cells.forEach((x,i)=>w.flames.push({id:flameIds[i],...x,bornAt,endsAt:bornAt+700}));
-  for(const wp of Object.values(w.players)){if(wp.alive&&cells.some(x=>x.r===wp.r&&x.c===wp.c)){wp.alive=false;wp.diedAt=bornAt;const p=room.players.get(wp.id);if(p)p.alive=false;}}
+  for(const wp of Object.values(w.players)){if(wp.alive&&cells.some(x=>x.r===wp.r&&x.c===wp.c)){if((wp.invincibleUntil||0)>bornAt)continue;wp.alive=false;wp.diedAt=bornAt;const p=room.players.get(wp.id);if(p)p.alive=false;}}
   w.bombs=w.bombs.filter(x=>!x.exploded);emitRoom(room);chains.forEach(id=>room.timeouts.push(setTimeout(()=>explodeWaterBomb(room,id),70)));
-  room.timeouts.push(setTimeout(()=>{w.flames=w.flames.filter(f=>!flameIds.includes(f.id));finishWaterballIfNeeded(room);if(room.phase==='playing')emitRoom(room);},720));finishWaterballIfNeeded(room);
+  room.timeouts.push(setTimeout(()=>{w.flames=w.flames.filter(f=>!flameIds.includes(f.id));maybeStartWaterFinalDuel(room);finishWaterballIfNeeded(room);if(room.phase==='playing')emitRoom(room);},720));maybeStartWaterFinalDuel(room);finishWaterballIfNeeded(room);
 }
 function finishWaterballIfNeeded(room){
   if(room.game!=='waterball'||room.phase!=='playing')return;const w=room.waterball,alive=Object.values(w.players).filter(p=>p.alive);if(alive.length>1)return;
