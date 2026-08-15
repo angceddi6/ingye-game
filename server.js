@@ -359,7 +359,7 @@ io.on('connection', socket => {
 function shuffle(a){a=[...a];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function newBombState(){return {holderId:null,round:0,passCount:0,eliminated:[],winner:null,explodesAt:null};}
 function newMemoryState(){return {cards:[],order:[],turnIndex:0,flipped:[],scores:{},busy:false};}
-function normalizeTyping(v){return String(v??'').trim().replace(/\s+/g,' ').toLowerCase();}
+function normalizeTyping(v){return String(v??'').normalize('NFKC').trim().replace(/\s+/g,' ').toLocaleLowerCase('en-US');}
 function newTypingState(){return {category:'medical',startedAt:null,endsAt:null,durationMs:60000,words:[],scores:{},claims:[],ranking:[],seq:0,speedLevel:1};}
 function typingCategoryLabel(k){return k==='medical'?'의학용어':k==='daily'?'일상용어':'사자성어';}
 function startTypingGame(room){
