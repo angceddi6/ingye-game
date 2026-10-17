@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>경강 미니게임 · TOP 10 기록 관리</title>
+  <link rel="stylesheet" href="/admin-records.css">
+</head>
+<body>
+  <main class="shell">
+    <header><div class="eyebrow">GYEONGGANG MINI GAME</div><h1>🏆 TOP 10 기록 관리</h1><p>관리자 전용 · 누락 기록 복구 및 잘못 입력한 기록 수정</p></header>
+    <section class="panel" id="loginPanel">
+      <h2>관리자 로그인</h2><p>Render 환경변수 <code>ADMIN_RECORDS_PASSWORD</code>에 설정한 비밀번호를 입력하세요.</p>
+      <form id="loginForm"><label>관리자 비밀번호<input id="adminPassword" type="password" autocomplete="current-password" required></label><button type="submit">로그인</button></form>
+      <div id="loginMessage" class="message" role="status"></div>
+    </section>
+    <section class="panel hidden" id="managerPanel">
+      <div class="toolbar"><div><h2>기록 관리</h2><p>게임을 선택하면 저장된 기록이 표시됩니다.</p></div><button class="secondary" id="logoutButton" type="button">로그아웃</button></div>
+      <div class="form-grid">
+        <label>게임<select id="game">
+          <option value="bubble">버블 슈터</option><option value="dodge">똥피하기</option><option value="typing">타자게임</option><option value="tetris">테트리스</option><option value="blockgame">블록게임</option><option value="shooter">슈팅게임</option><option value="music">뮤직톡톡</option><option value="apple">사과게임</option><option value="maze">미로찾기</option><option value="minesweeper">지뢰게임</option>
+        </select></label>
+        <label>닉네임<input id="nickname" maxlength="40" required placeholder="기록에 표시할 닉네임"></label>
+        <label class="field-score">점수<input id="score" type="number" min="0" max="100000000" step="1" value="0"></label>
+        <label class="field-level hidden">레벨 / 웨이브<input id="level" type="number" min="1" max="10000" step="1" value="1"></label>
+        <label class="field-seconds hidden">시간(초)<input id="seconds" type="number" min="0" max="86400" step="1" value="0"></label>
+        <label class="field-size hidden">지뢰게임 보드 크기<select id="size"><option>5</option><option selected>10</option><option>20</option><option>30</option><option>40</option><option>50</option></select></label>
+        <label class="field-elapsed hidden">경과 시간(ms)<input id="elapsedMs" type="number" min="0" max="3600000" step="1" value="0"></label>
+        <label class="field-cleared hidden">사과/리듬 게임 결과<select id="cleared"><option value="false">완료 실패 / 시간 종료</option><option value="true">완료 성공</option></select></label>
+        <label class="field-detail">기록 설명(선택)<input id="detail" maxlength="100" placeholder="예: 버블 슈터 1250점"></label>
+      </div>
+      <div class="actions"><button id="saveButton" type="button">새 기록 저장</button><button id="updateButton" type="button" class="secondary" disabled>선택 기록 수정</button><button id="deleteButton" type="button" class="secondary" disabled>선택 기록 삭제</button><button id="cancelEditButton" type="button" class="secondary" disabled>선택 해제</button></div>
+      <div id="managerMessage" class="message" role="status"></div>
+      <div class="records-heading"><h3>저장된 기록</h3><button class="secondary" id="refreshButton" type="button">새로고침</button></div>
+      <p class="hint">기록을 수정하거나 삭제하려면 아래 목록의 행을 선택하세요. TOP 10 순위는 게임 화면의 정렬 기준에 따라 결정됩니다.</p>
+      <div class="table-wrap"><table><thead id="recordsHead"></thead><tbody id="recordsBody"><tr><td>기록을 불러오는 중...</td></tr></tbody></table></div>
+      <p class="footnote">관리 페이지 주소를 아는 것만으로는 기록을 변경할 수 없습니다. 관리자 비밀번호는 다른 사람과 공유하지 마세요.</p>
+    </section>
+    <footer><a href="/">← 미니게임으로 돌아가기</a></footer>
+  </main>
+  <script src="/socket.io/socket.io.js"></script><script src="/admin-records.js"></script>
+</body></html>
