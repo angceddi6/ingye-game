@@ -41,7 +41,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['shooter','music','apple','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','catchmind','gomoku','twenty','minesweeper','tagger','maze','redlight','bearbattle','territory','bubble','zombie','tetris','blockgame']);
+const GAMES = new Set(['shooter','music','apple','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','catchmind','gomoku','twenty','minesweeper','tagger','maze','redlight','bearbattle','territory','bubble','zombie','tetris','blockgame','othello']);
 const CATCHMIND_CHOOSE_MS = 10_000;
 const CATCHMIND_DRAW_MS = 80_000;
 const CATCHMIND_HINT_DELAYS = [30_000,45_000,60_000];
@@ -172,6 +172,7 @@ const roomView = (room, viewerId) => ({
   waterball: room.waterball,
   catchmind: room.game === 'catchmind' ? catchmindView(room, viewerId) : null,
   gomoku: room.gomoku,
+  othello: room.othello,
   twenty: room.game === 'twenty' ? twentyView(room, viewerId) : null,
   minesweeper: room.minesweeper,
   tagger: room.tagger,
@@ -197,7 +198,7 @@ const clearTimers = room => {
   room.timers=[]; room.timeouts=[];
 };
 const normalizeBingoSize = value => [3,4,5].includes(Number(value)) ? Number(value) : 5;
-const createRoom = (socket, nickname, game, topic='', bingoSize=5, catchmindRounds=3) => {
+const createRoom = (socket, nickname, game, topic='', bingoSize=5, catchmindRounds=3, othelloMode='online') => {
   const code=makeCode();
   const player={id:socket.id,nickname,color:COLORS[0],ready:false,alive:true,x:50,progress:0,finishedAt:null,survived:null,stone:null};
   bingoSize=normalizeBingoSize(bingoSize);
@@ -213,6 +214,7 @@ const createRoom = (socket, nickname, game, topic='', bingoSize=5, catchmindRoun
     waterball:newWaterballState(),
     catchmind:newCatchmindState(catchmindRounds),
     gomoku:{board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null},
+    othello:newOthelloState(othelloMode),
     twenty:newTwentyState(),
     minesweeper:newMinesweeperState(),
     tagger:{startedAt:null,it:null,players:{},ranking:[],obstacles:[]},
@@ -420,16 +422,17 @@ io.on('connection', socket => {
     try { await recordPool.query('INSERT INTO minigame_records (game_key,nickname,score_value,score_detail) VALUES ($1,$2,$3,$4)',[game,String(player.nickname).slice(0,40),score,String(detail||'').slice(0,100)]); cb({ok:true}); io.emit('minigame:records:updated',{game}); }
     catch(e) { console.error('Game record save failed:',e.message); cb({ok:false,message:'기록 저장에 실패했습니다.'}); }
   });
-  socket.on('room:create', ({nickname,game,topic,bingoSize,catchmindRounds}, cb=()=>{}) => {
+  socket.on('room:create', ({nickname,game,topic,bingoSize,catchmindRounds,othelloMode}, cb=()=>{}) => {
     nickname=clean(nickname); if(!nickname) return cb({ok:false,message:'닉네임을 입력해주세요.'});
     if(!GAMES.has(game)) return cb({ok:false,message:'게임을 선택해주세요.'});
-    const room=createRoom(socket,nickname,game,topic,bingoSize,catchmindRounds); emitRoom(room); cb({ok:true,code:room.code});
+    const room=createRoom(socket,nickname,game,topic,bingoSize,catchmindRounds,othelloMode); if(game==='othello'&&room.othello.mode==='computer')room.phase='playing'; emitRoom(room); cb({ok:true,code:room.code});
   });
 
   socket.on('room:join', ({nickname,code}, cb=()=>{}) => {
     nickname=clean(nickname); code=String(code ?? '').replace(/\s+/g,'').toUpperCase().slice(0,6); const room=rooms.get(code);
     if(!nickname) return cb({ok:false,message:'닉네임을 입력해주세요.'});
     if(!room) return cb({ok:false,message:'존재하지 않는 초대코드입니다.'});
+    if(room.game==='othello'&&room.othello.mode==='computer')return cb({ok:false,message:'컴퓨터 대전 방에는 참가할 수 없습니다.'});
     if(['apple','music','shooter'].includes(room.game)) return cb({ok:false,message:'이 게임은 1인용 게임이라 참가할 수 없습니다.'});
     if(['countdown','playing','voting'].includes(room.phase)) return cb({ok:false,message:'게임이 진행중입니다.'});
     if(room.game==='bearbattle'&&room.players.size>=2)return cb({ok:false,message:'달구vs살구는 2명만 참가할 수 있습니다.'});
@@ -439,7 +442,7 @@ io.on('connection', socket => {
     room.players.set(socket.id,{id:socket.id,nickname,color,ready:false,alive:true,x:10+Math.random()*80,progress:0,finishedAt:null,survived:null,stone:null});
     socket.join(code); socket.data.roomCode=code;
     if(room.game==='bingo'){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(socket.id,Array(cells).fill(''));room.bingoMarks.set(socket.id,Array(cells).fill(false));room.bingoLines.set(socket.id,[]);}
-    assignGomoku(room); emitRoom(room);
+    assignGomoku(room); assignOthello(room); emitRoom(room);
     if(room.game==='typing'&&room.phase==='playing') io.to(socket.id).emit('typing:sync',{words:room.typing.words,elapsed:Date.now()-room.typing.startedAt,scores:room.typing.scores,speedLevel:room.typing.speedLevel,endsAt:room.typing.endsAt,serverNow:Date.now()});
     cb({ok:true,code});
   });
@@ -510,7 +513,7 @@ io.on('connection', socket => {
     room.bingoBoards=new Map();room.bingoMarks=new Map();room.bingoLines=new Map();room.bingoTarget=1;room.bingoRanking=[];room.bingoTurnOrder=[];room.bingoTurnIndex=0;room.bingoCalledWords=[];
     for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}
     room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};room.race={startedAt:null,ranking:[]};room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};room.liar=newLiarState();room.bomb=newBombState();room.memory=newMemoryState();room.typing=newTypingState();room.waterball=newWaterballState();room.catchmind=newCatchmindState(catchmindRounds);
-    room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null}; assignGomoku(room); room.twenty=newTwentyState(); room.minesweeper=newMinesweeperState(); room.tagger={startedAt:null,it:null,players:{},ranking:[],obstacles:[]}; room.redlight={startedAt:null,phase:'red',phrase:'',caught:[],ranking:[],positions:{},statuses:{},lastMoveAt:{},turnId:0,nextCallAt:0,canCall:true}; room.bearbattle={started:false,turnId:null,hp:{},wind:0,angle:45,power:50,shots:[],winner:null,message:'방장과 참가자가 모두 들어오면 시작하세요.'}; room.territory=newTerritoryState();room.bubble=newBubbleState();room.zombie=newZombieState();room.tetris={};room.blockgame={}; emitRoom(room);
+    room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null}; assignGomoku(room); room.othello=newOthelloState(room.othello?.mode||'online'); assignOthello(room); room.twenty=newTwentyState(); room.minesweeper=newMinesweeperState(); room.tagger={startedAt:null,it:null,players:{},ranking:[],obstacles:[]}; room.redlight={startedAt:null,phase:'red',phrase:'',caught:[],ranking:[],positions:{},statuses:{},lastMoveAt:{},turnId:0,nextCallAt:0,canCall:true}; room.bearbattle={started:false,turnId:null,hp:{},wind:0,angle:45,power:50,shots:[],winner:null,message:'방장과 참가자가 모두 들어오면 시작하세요.'}; room.territory=newTerritoryState();room.bubble=newBubbleState();room.zombie=newZombieState();room.tetris={};room.blockgame={}; emitRoom(room);
   });
   socket.on('bearbattle:start',()=>{const room=getRoom(socket);if(!isHost(room,socket)||room.game!=='bearbattle'||room.players.size!==2)return reject(socket,'달구vs살구는 두 명이 참가해야 시작할 수 있습니다.');const ids=[...room.players.keys()];room.phase='playing';room.bearbattle={started:true,turnId:ids[0],hp:{[ids[0]]:100,[ids[1]]:100},wind:Math.floor(Math.random()*11)-5,angle:45,power:50,shots:[],winner:null,message:`${room.players.get(ids[0]).nickname}의 차례입니다.`};emitRoom(room);io.to(room.code).emit('bearbattle:update',room.bearbattle);});
     socket.on('bearbattle:throw',(payload={})=>{
@@ -922,6 +925,16 @@ io.on('connection', socket => {
     const room=getRoom(socket); if(!room||room.game!=='minesweeper'||!isHost(room,socket)||room.phase!=='lobby')return;
     size=[5,10,20,30,40,50].includes(Number(size))?Number(size):10; room.minesweeper={size}; room.phase='playing'; emitRoom(room);
   });
+  socket.on('othello:place', ({r,c}={}) => {
+    const room=getRoom(socket),g=room?.othello,p=room?.players.get(socket.id);if(!room||room.game!=='othello'||room.phase==='finished'||!g||!p)return;
+    if(g.mode==='online'&&room.players.size!==2)return reject(socket,'오델로는 두 명이 참가해야 시작할 수 있어요.');
+    if(g.mode==='computer'&&socket.id!==room.hostId)return;
+    const color=g.mode==='computer'?'black':p.stone;if(color!==g.turn)return reject(socket,'상대방 차례예요.');
+    const flips=othelloFlips(g.board,Number(r),Number(c),color);if(!flips.length)return reject(socket,'그 위치에는 둘 수 없어요.');
+    g.board[r][c]=color;for(const [rr,cc] of flips)g.board[rr][cc]=color;g.lastMove={r,c,color};
+    advanceOthello(room);if(g.mode==='computer'&&room.phase!=='finished'&&g.turn==='white'){room.timeouts.push(setTimeout(()=>{if(room.game!=='othello'||room.phase==='finished'||g.turn!=='white')return;const moves=othelloLegalMoves(g.board,'white');if(moves.length){moves.sort((a,b)=>b.flips.length-a.flips.length);const pick=moves[Math.floor(Math.random()*Math.min(3,moves.length))];g.board[pick.r][pick.c]='white';for(const [rr,cc] of pick.flips)g.board[rr][cc]='white';g.lastMove={r:pick.r,c:pick.c,color:'white'};}advanceOthello(room);emitRoom(room);},450));}
+    emitRoom(room);
+  });
   socket.on('gomoku:place', ({r,c}) => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='gomoku'||room.phase==='finished'||room.players.size!==2||!p?.stone)return; if(room.phase==='lobby')room.phase='playing'; if(p.stone!==room.gomoku.turn||room.gomoku.board[r]?.[c])return; room.gomoku.board[r][c]=p.stone; const line=findWin(room.gomoku.board,r,c,p.stone); if(line){room.gomoku.winner=p.nickname;room.gomoku.winLine=line;room.phase='finished';} else room.gomoku.turn=p.stone==='black'?'white':'black'; emitRoom(room); });
 
   socket.on('disconnect', () => leaveRoom(socket));
@@ -1112,7 +1125,12 @@ function liarView(room,viewerId){
   const l=room.liar||newLiarState(), isLiar=l.liarId===viewerId;
   const reveal=room.phase==='finished'; return {isLiar,category:l.category||null,word:((!isLiar||reveal)&&l.word)?l.word:null,order:l.order,round:l.round,turnIndex:l.turnIndex,messages:l.messages,revealDeadline:l.revealDeadline||null,voted:!!l.votes?.[viewerId],voteCount:Object.keys(l.votes||{}).length,result:l.result,revealBeforeVote:!!l.revealBeforeVote};
 }
+function newOthelloState(mode='online'){const board=Array.from({length:10},()=>Array(10).fill(null));board[4][4]='white';board[4][5]='black';board[5][4]='black';board[5][5]='white';return {board,turn:'black',winner:null,black:2,white:2,mode:mode==='computer'?'computer':'online',lastMove:null,message:mode==='computer'?'あなたは黒です。黒から先攻します。':'黒が先攻です。'};}
+function othelloFlips(board,r,c,color){if(!Number.isInteger(r)||!Number.isInteger(c)||r<0||c<0||r>=10||c>=10||board[r][c])return [];const other=color==='black'?'white':'black',all=[];for(let dr=-1;dr<=1;dr++)for(let dc=-1;dc<=1;dc++){if(!dr&&!dc)continue;let rr=r+dr,cc=c+dc,line=[];while(rr>=0&&rr<10&&cc>=0&&cc<10&&board[rr][cc]===other){line.push([rr,cc]);rr+=dr;cc+=dc;}if(line.length&&rr>=0&&rr<10&&cc>=0&&cc<10&&board[rr][cc]===color)all.push(...line);}return all;}
+function othelloLegalMoves(board,color){const out=[];for(let r=0;r<10;r++)for(let c=0;c<10;c++){const flips=othelloFlips(board,r,c,color);if(flips.length)out.push({r,c,flips});}return out;}
+function advanceOthello(room){const g=room.othello;g.black=g.board.flat().filter(x=>x==='black').length;g.white=g.board.flat().filter(x=>x==='white').length;const next=g.turn==='black'?'white':'black';if(othelloLegalMoves(g.board,next).length){g.turn=next;g.message=`${next==='black'?'흑돌':'백돌'} 차례입니다.`;return;}if(othelloLegalMoves(g.board,g.turn).length){g.message=`${next==='black'?'흑돌':'백돌'}은 둘 곳이 없어 자동으로 차례를 넘깁니다.`;return;}room.phase='finished';g.winner=g.black===g.white?'draw':g.black>g.white?'black':'white';g.message=g.winner==='draw'?'무승부입니다.':`${g.winner==='black'?'흑돌':'백돌'} 승리!`; }
 function assignGomoku(room){ if(room.game!=='gomoku')return; let i=0;for(const p of room.players.values())p.stone=i++===0?'black':i===2?'white':null; }
+function assignOthello(room){if(room.game!=='othello'||room.othello?.mode==='computer')return;let i=0;for(const p of room.players.values())p.stone=i++===0?'black':i===2?'white':null;}
 function normalizeBingoWord(v){return String(v??'').trim().replace(/\s+/g,' ').toLocaleLowerCase('ko-KR');}
 function calcBingoLines(m,size=5){const lines=[];for(let r=0;r<size;r++){const a=Array.from({length:size},(_,c)=>r*size+c);if(a.every(i=>m[i]))lines.push(a);}for(let c=0;c<size;c++){const a=Array.from({length:size},(_,r)=>r*size+c);if(a.every(i=>m[i]))lines.push(a);}const d1=Array.from({length:size},(_,i)=>i*size+i),d2=Array.from({length:size},(_,i)=>i*size+(size-1-i));if(d1.every(i=>m[i]))lines.push(d1);if(d2.every(i=>m[i]))lines.push(d2);return lines;}
 function startCountdown(socket,game){const room=getRoom(socket);if(!isHost(room,socket)||room.game!==game||room.phase!=='lobby')return;room.phase='countdown';emitRoom(room);room.timeouts.push(setTimeout(()=>{if(!rooms.has(room.code))return;room.phase='playing';resetPlayerStates(room);const now=Date.now();if(game==='dodge'){room.dodge={startedAt:now,drops:[],speedLevel:2,countLevel:3,ranking:[],dropSeq:0};room.timers.push(setInterval(()=>{if(room.phase!=='playing')return;const elapsed=Date.now()-now;room.dodge.speedLevel=2+Math.floor(elapsed/5000);room.dodge.countLevel=3+Math.floor(elapsed/10000);io.to(room.code).emit('dodge:tick',{elapsed,speedLevel:room.dodge.speedLevel,countLevel:room.dodge.countLevel});},500));spawnDodgeBatch(room);}else if(game==='race')room.race={startedAt:now,ranking:[]};else if(game==='timing')room.timing={startedAt:now,targetMs:(5+Math.floor(Math.random()*6))*1000,submissions:[],ranking:[]};else if(game==='typing'){startTypingGame(room);return;}else if(game==='tagger'){const ps=[...room.players.values()],it=ps[Math.floor(Math.random()*ps.length)];const obstacles=[{x:22,y:18,w:14,h:5},{x:64,y:18,w:14,h:5},{x:22,y:76,w:14,h:5},{x:64,y:76,w:14,h:5},{x:43,y:38,w:14,h:22},{x:8,y:48,w:12,h:5},{x:80,y:48,w:12,h:5}];const spawnTaggerPlayer=(isIt)=>{let x=50,y=50,tries=0;do{x=6+Math.random()*88;y=7+Math.random()*86;tries++;}while(tries<100&&obstacles.some(o=>x>o.x-4&&x<o.x+o.w+4&&y>o.y-5&&y<o.y+o.h+5));return{x,y,it:isIt,alive:true};};room.tagger={startedAt:now,it:it.id,obstacles,ranking:[],players:Object.fromEntries(ps.map(p=>[p.id,spawnTaggerPlayer(p.id===it.id)]))};io.to(room.code).emit('tagger:positions',room.tagger.players);room.timers.push(setInterval(()=>{if(room.phase==='playing'&&room.game==='tagger')io.to(room.code).emit('tagger:positions',room.tagger.players);},80));}else if(game==='redlight'){const ps=[...room.players.values()],it=ps[Math.floor(Math.random()*ps.length)];room.redlight={startedAt:now,itId:it.id,itNickname:it.nickname,phase:'red',phrase:`${it.nickname}가 술래입니다. 구호를 외치면 출발!`,caught:[],ranking:[],positions:Object.fromEntries(ps.filter(p=>p.id!==it.id).map(p=>[p.id,3])),statuses:Object.fromEntries(ps.filter(p=>p.id!==it.id).map(p=>[p.id,'active'])),lastMoveAt:{},turnId:0,nextCallAt:0,canCall:true};}emitRoom(room);},3500));}
@@ -1128,7 +1146,7 @@ function spawnDodgeBatch(room){
   room.timeouts.push(setTimeout(()=>spawnDodgeBatch(room),delay));
 }
 
-function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;room.bingoTurnOrder=[];room.bingoTurnIndex=0;room.bingoCalledWords=[];for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='typing')room.typing=newTypingState();if(room.game==='waterball')room.waterball=newWaterballState();if(room.game==='catchmind')room.catchmind=newCatchmindState(room.catchmind?.rounds||3);if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}if(room.game==='twenty')room.twenty=newTwentyState();if(room.game==='minesweeper')room.minesweeper=newMinesweeperState();if(room.game==='tagger')room.tagger={startedAt:null,it:null,players:{},ranking:[],obstacles:[]};if(room.game==='redlight')room.redlight={startedAt:null,phase:'red',phrase:'',caught:[],ranking:[],positions:{},statuses:{},lastMoveAt:{},turnId:0,nextCallAt:0,canCall:true};if(room.game==='territory')room.territory=newTerritoryState();if(room.game==='bubble')room.bubble=newBubbleState();if(room.game==='zombie')room.zombie=newZombieState();}
+function restartGame(room){clearTimers(room);room.phase='lobby';resetPlayerStates(room);if(room.game==='bingo'){room.bingoRanking=[];room.bingoTarget=1;room.bingoTurnOrder=[];room.bingoTurnIndex=0;room.bingoCalledWords=[];for(const p of room.players.values()){const cells=(room.bingoSize||5)**2;room.bingoBoards.set(p.id,Array(cells).fill(''));room.bingoMarks.set(p.id,Array(cells).fill(false));room.bingoLines.set(p.id,[]);}}if(room.game==='dodge')room.dodge={startedAt:null,drops:[],speedLevel:1,countLevel:1,ranking:[]};if(room.game==='race')room.race={startedAt:null,ranking:[]};if(room.game==='timing')room.timing={startedAt:null,targetMs:null,submissions:[],ranking:[]};if(room.game==='liar')room.liar=newLiarState();if(room.game==='bomb')room.bomb=newBombState();if(room.game==='memory')room.memory=newMemoryState();if(room.game==='typing')room.typing=newTypingState();if(room.game==='waterball')room.waterball=newWaterballState();if(room.game==='catchmind')room.catchmind=newCatchmindState(room.catchmind?.rounds||3);if(room.game==='gomoku'){room.gomoku={board:Array.from({length:15},()=>Array(15).fill(null)),turn:'black',winner:null,winLine:null};assignGomoku(room);}if(room.game==='othello')room.othello=newOthelloState(room.othello?.mode||'online');if(room.game==='twenty')room.twenty=newTwentyState();if(room.game==='minesweeper')room.minesweeper=newMinesweeperState();if(room.game==='tagger')room.tagger={startedAt:null,it:null,players:{},ranking:[],obstacles:[]};if(room.game==='redlight')room.redlight={startedAt:null,phase:'red',phrase:'',caught:[],ranking:[],positions:{},statuses:{},lastMoveAt:{},turnId:0,nextCallAt:0,canCall:true};if(room.game==='territory')room.territory=newTerritoryState();if(room.game==='bubble')room.bubble=newBubbleState();if(room.game==='zombie')room.zombie=newZombieState();}
 function findWin(board,r,c,s){const dirs=[[1,0],[0,1],[1,1],[1,-1]];for(const[dr,dc]of dirs){const line=[[r,c]];for(const sign of[-1,1])for(let k=1;k<5;k++){const rr=r+dr*k*sign,cc=c+dc*k*sign;if(board[rr]?.[cc]===s)line.push([rr,cc]);else break;}if(line.length>=5)return line;}return null;}
 function leaveRoom(socket){const code=socket.data.roomCode,room=rooms.get(code);if(!room)return;room.players.delete(socket.id);room.bingoBoards.delete(socket.id);room.bingoMarks.delete(socket.id);room.bingoLines.delete(socket.id);if(room.bingoTurnOrder?.length){const removed=room.bingoTurnOrder.indexOf(socket.id);room.bingoTurnOrder=room.bingoTurnOrder.filter(id=>id!==socket.id);if(removed>=0&&removed<room.bingoTurnIndex)room.bingoTurnIndex--;if(room.bingoTurnOrder.length)room.bingoTurnIndex=Math.max(0,room.bingoTurnIndex%room.bingoTurnOrder.length);else room.bingoTurnIndex=0;}socket.leave(code);socket.data.roomCode=null;if(room.players.size===0){clearTimers(room);rooms.delete(code);return;}if(room.hostId===socket.id)room.hostId=room.players.keys().next().value;assignGomoku(room);if(room.game==='waterball'&&room.phase==='playing'){const wp=room.waterball?.players?.[socket.id];if(wp){wp.alive=false;wp.diedAt=Date.now();}finishWaterballIfNeeded(room);}if(room.game==='redlight'&&room.phase==='playing'){const g=room.redlight;if(g?.itId===socket.id){room.phase='finished';g.phase='finished';g.phrase='술래가 나가서 게임이 종료됐어요.';clearTimers(room);}else{if(g?.positions)delete g.positions[socket.id];if(g?.statuses)delete g.statuses[socket.id];if(g?.lastMoveAt)delete g.lastMoveAt[socket.id];finishRedlightIfDone(room);}}if(room.game==='catchmind'&&room.phase==='playing'&&room.catchmind?.drawerId===socket.id){room.catchmind.turn++;startCatchmindTurn(room);return;}emitRoom(room);}
 server.listen(PORT,()=>console.log(`Server running on ${PORT}`));
