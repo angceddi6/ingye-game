@@ -35,6 +35,8 @@ socket.on('room:update',room=>{
   if(prev?.game==='shooter'&&(room.game!=='shooter'||room.phase==='selecting')){shooterStopLoop();shooterState.phase='ready';}
   if(room.game==='shooter'&&prev?.game!=='shooter'){shooterState.phase='ready';shooterState.saved=false;shooterState.saveMessage='';shooterLoadRecords();}
   if(room.game==='bubble'&&prev?.game!=='bubble'){bubbleSaved=false;bubbleSaveMessage='';loadBubbleRecords();}
+  // A new round in the same room must be allowed to save its own Bubble Shooter score.
+  if(room.game==='bubble'&&prev?.game==='bubble'&&prev.phase==='finished'&&room.phase!=='finished'){bubbleSaved=false;bubbleSaveMessage='';}
   if(room.game==='bubble'&&room.phase==='finished'&&prev?.phase!=='finished'&&!bubbleSaved){bubbleSaved=true;const score=Number(room.bubble?.players?.[socket.id]?.score)||0;socket.emit('minigame:records:save',{game:'bubble',score,detail:`버블 슈터 ${score}점`},res=>{bubbleSaveMessage=res?.ok?'기록이 저장됐어요!':(res?.message||'기록 저장에 실패했어요.');if(state.room?.game==='bubble')render();loadBubbleRecords();});}
   if(prev?.game==='apple'&&(room.game!=='apple'||room.phase==='selecting')){stopAppleTimer();appleState.phase='ready';}
   if(room.game==='apple'&&prev?.game!== 'apple'){stopAppleTimer();appleState.phase='ready';loadAppleRecords();}

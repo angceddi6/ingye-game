@@ -135,3 +135,10 @@
 - 방향키 이동, 스페이스바 연속 발사, 시작 목숨 3개, 점점 강해지는 적/탄막과 보스 적을 지원합니다.
 - 게임 종료 시 점수·웨이브·생존 시간을 PostgreSQL `minigame_records`의 `arcadeshooter` 키로 저장하고 TOP 10을 표시합니다.
 - Render에서 기록을 영구 저장하려면 `DATABASE_URL`이 설정되어 있어야 합니다.
+
+## v75 관리자 기록 복구 및 버블 슈터 저장 수정
+- 관리자 기록 페이지: `/admin-records.html`
+- Render Web Service 환경변수 `ADMIN_RECORDS_PASSWORD`를 설정해야 관리자 로그인 가능
+- `crypto.timingSafeEqual` 사용을 위해 Node.js `crypto` 모듈 import를 복구
+- 버블 슈터에서 같은 방의 재도전 시작 시 저장 플래그를 초기화하여 다음 판 기록도 저장되도록 수정
+- 기존 `DATABASE_URL` 환경변수는 유지
