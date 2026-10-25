@@ -45,16 +45,6 @@ const CATCHMIND_CHOOSE_MS = 10_000;
 const CATCHMIND_DRAW_MS = 80_000;
 const CATCHMIND_HINT_DELAYS = [30_000,45_000,60_000];
 
-const ADMIN_RECORD_TYPES = {
-  bubble:{label:'버블 슈터',key:'bubble',mode:'score'}, dodge:{label:'똥피하기',key:'dodge',mode:'score'},
-  typing:{label:'타자게임',key:'typing',mode:'score'}, tetris:{label:'테트리스',key:'tetris',mode:'score'},
-  blockgame:{label:'블록게임',key:'blockgame',mode:'score'}, shooter:{label:'슈팅게임',key:'arcadeshooter',mode:'shooter'},
-  music:{label:'뮤직톡톡',key:'musictalktok',mode:'music'}, apple:{label:'사과게임',key:'apple',mode:'apple'},
-  maze:{label:'미로찾기',key:'maze',mode:'maze'}, minesweeper:{label:'지뢰게임',key:'minesweeper',mode:'minesweeper'}
-};
-const adminLoginAttempts = new Map();
-
-
 const LIAR_WORDS = {
   '음식':['김치찌개','삼겹살','떡볶이','비빔밥','치킨','피자','라면','김밥','돈까스','냉면','짜장면','카레'],
   '디저트':['아이스크림','케이크','마카롱','붕어빵','도넛','와플','초콜릿','푸딩','빙수','쿠키','크로플','호떡'],
@@ -249,66 +239,6 @@ function finishRedlightIfDone(room) {
 }
 
 io.on('connection', socket => {
-  socket.on('admin-records:logout', () => { socket.data.adminRecordsAuthed = false; });
-
-  socket.on('admin-records:login', ({password} = {}, cb = () => {}) => {
-    const configured = process.env.ADMIN_RECORDS_PASSWORD;
-    if (!configured) return cb({ok:false,message:'관리자 기능이 비활성화되어 있습니다. Render 환경변수 ADMIN_RECORDS_PASSWORD를 설정해 주세요.'});
-    const address = socket.handshake.address || 'unknown';
-    const now = Date.now();
-    const attempts = adminLoginAttempts.get(address) || {count:0,until:0};
-    if (attempts.until > now) return cb({ok:false,message:'로그인 시도가 너무 많습니다. 10분 후 다시 시도해 주세요.'});
-    const a=Buffer.from(String(password||'')), b=Buffer.from(configured);
-    const ok=a.length===b.length && crypto.timingSafeEqual(a,b);
-    if (!ok) { attempts.count++; if(attempts.count>=5){attempts.count=0;attempts.until=now+600000;} adminLoginAttempts.set(address,attempts); return cb({ok:false,message:'관리자 비밀번호가 올바르지 않습니다.'}); }
-    adminLoginAttempts.delete(address); socket.data.adminRecordsAuthed=true; cb({ok:true,message:'관리자 인증 완료'});
-  });
-
-  socket.on('admin-records:list', ({game='bubble',size=10} = {}, cb = () => {}) => {
-    if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});
-    if (!recordPool || !recordDbReady) return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});
-    const type=ADMIN_RECORD_TYPES[game]; if(!type)return cb({ok:false,message:'지원하지 않는 게임입니다.'});
-    (async()=>{
-      if(type.mode==='minesweeper') { size=Number(size); if(![5,10,20,30,40,50].includes(size))throw new Error('보드 크기를 선택해 주세요.'); const q=await recordPool.query('SELECT id,nickname,board_size AS size,elapsed_seconds AS seconds,created_at FROM minesweeper_records WHERE board_size=$1 ORDER BY elapsed_seconds ASC,created_at ASC LIMIT 100',[size]); return cb({ok:true,records:q.rows}); }
-      const order=type.mode==='maze' ? "score_value DESC, CASE WHEN score_detail ~ '^[0-9]+(\\.[0-9]+)?$' THEN score_detail::numeric ELSE 999999999 END ASC, created_at ASC" : type.mode==='music' ? "score_value DESC, CASE WHEN score_detail ~ '^clear:[0-9]+$' THEN 0 ELSE 1 END ASC, CASE WHEN score_detail ~ '^(clear|over):[0-9]+$' THEN split_part(score_detail,':',2)::BIGINT ELSE 999999999 END ASC, created_at ASC" : type.mode==='apple' ? "score_value DESC, CASE WHEN score_detail ~ '^clear:[0-9]+$' THEN 0 ELSE 1 END ASC, CASE WHEN score_detail ~ '^clear:[0-9]+$' THEN split_part(score_detail,':',2)::BIGINT ELSE 999999999 END ASC, created_at ASC" : 'score_value DESC,created_at ASC';
-      const q=await recordPool.query(`SELECT id,game_key,nickname,score_value AS score,score_detail AS detail,created_at FROM minigame_records WHERE game_key=$1 ORDER BY ${order} LIMIT 100`,[type.key]); cb({ok:true,records:q.rows});
-    })().catch(e=>{console.error('Admin records list failed:',e.message);cb({ok:false,message:'기록을 불러오지 못했습니다.'});});
-  });
-
-  socket.on('admin-records:save', ({game='bubble',nickname,score,detail='',level,seconds,elapsedMs,cleared=false,size=10} = {}, cb = () => {}) => {
-    if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});
-    if (!recordPool || !recordDbReady) return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});
-    const type=ADMIN_RECORD_TYPES[game]; nickname=String(nickname||'').trim().slice(0,40); detail=String(detail||'').trim().slice(0,100);
-    if(!type||!nickname)return cb({ok:false,message:'게임과 닉네임을 입력해 주세요.'});
-    (async()=>{
-      if(type.mode==='minesweeper'){size=Number(size);seconds=Number(seconds);if(![5,10,20,30,40,50].includes(size)||!Number.isInteger(seconds)||seconds<0||seconds>86400)throw new Error('지뢰게임은 보드 크기와 0~86400초 정수 시간을 입력해 주세요.');await recordPool.query('INSERT INTO minesweeper_records (nickname,board_size,elapsed_seconds) VALUES ($1,$2,$3)',[nickname,size,seconds]);return cb({ok:true,message:'기록을 저장했습니다.'});}
-      if(type.mode==='maze'){level=Number(level);seconds=Number(seconds);if(!Number.isInteger(level)||level<1||level>20||!Number.isFinite(seconds)||seconds<0||seconds>86400)throw new Error('미로찾기는 레벨 1~20, 시간 0~86400초를 입력해 주세요.');await recordPool.query('INSERT INTO minigame_records (game_key,nickname,score_value,score_detail) VALUES ($1,$2,$3,$4)',[type.key,nickname,level,String(seconds)]);io.emit('maze:records:updated');return cb({ok:true,message:'기록을 저장했습니다.'});}
-      score=Number(score);if(!Number.isInteger(score)||score<0||score>100000000)throw new Error('점수는 0~100000000 정수로 입력해 주세요.');
-      if(type.mode==='shooter'){level=Number(level||1);elapsedMs=Number(elapsedMs||0);if(!Number.isInteger(level)||level<1||level>10000||!Number.isInteger(elapsedMs)||elapsedMs<0||elapsedMs>86400000)throw new Error('슈팅게임 웨이브/경과시간 값이 올바르지 않습니다.');detail=`wave:${level}:${elapsedMs}`;}
-      if(type.mode==='music'){elapsedMs=Number(elapsedMs||0);if(!Number.isInteger(elapsedMs)||elapsedMs<0||elapsedMs>3600000)throw new Error('뮤직톡톡 경과시간은 0~3600000ms 정수여야 합니다.');detail=`${cleared?'clear':'over'}:${elapsedMs}`;}
-      if(type.mode==='apple'){elapsedMs=Number(elapsedMs||0);if(!Number.isInteger(elapsedMs)||elapsedMs<0||elapsedMs>120000)throw new Error('사과게임 경과시간은 0~120000ms 정수여야 합니다.');detail=cleared?`clear:${elapsedMs}`:'timeout';}
-      if(type.mode==='score'&&!detail)detail=`${type.label} ${score}점`;
-      await recordPool.query('INSERT INTO minigame_records (game_key,nickname,score_value,score_detail) VALUES ($1,$2,$3,$4)',[type.key,nickname,score,detail]);
-      io.emit('minigame:records:updated',{game:type.key});if(game==='shooter')io.emit('shooter:records:updated');if(game==='music')io.emit('music:records:updated');if(game==='apple')io.emit('apple:records:updated');cb({ok:true,message:'기록을 저장했습니다.'});
-    })().catch(e=>{console.error('Admin record save failed:',e.message);cb({ok:false,message:e.message||'기록 저장에 실패했습니다.'});});
-  });
-
-  socket.on('admin-records:update', ({game='bubble',id,nickname,score,detail='',level,seconds,elapsedMs,cleared=false,size=10} = {}, cb = () => {}) => {
-    if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});
-    if (!recordPool || !recordDbReady) return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});
-    const type=ADMIN_RECORD_TYPES[game];id=Number(id);nickname=String(nickname||'').trim().slice(0,40);detail=String(detail||'').trim().slice(0,100);if(!type||!Number.isInteger(id)||id<1||!nickname)return cb({ok:false,message:'수정할 기록과 닉네임을 확인해 주세요.'});
-    (async()=>{
-      if(type.mode==='minesweeper'){size=Number(size);seconds=Number(seconds);if(![5,10,20,30,40,50].includes(size)||!Number.isInteger(seconds)||seconds<0||seconds>86400)throw new Error('지뢰게임 보드 크기/시간 값이 올바르지 않습니다.');await recordPool.query('UPDATE minesweeper_records SET nickname=$1,board_size=$2,elapsed_seconds=$3 WHERE id=$4',[nickname,size,seconds,id]);}
-      else if(type.mode==='maze'){level=Number(level);seconds=Number(seconds);if(!Number.isInteger(level)||level<1||level>20||!Number.isFinite(seconds)||seconds<0||seconds>86400)throw new Error('미로찾기 레벨/시간 값이 올바르지 않습니다.');await recordPool.query('UPDATE minigame_records SET nickname=$1,score_value=$2,score_detail=$3 WHERE id=$4 AND game_key=$5',[nickname,level,String(seconds),id,type.key]);}
-      else {score=Number(score);if(!Number.isInteger(score)||score<0||score>100000000)throw new Error('점수는 0~100000000 정수로 입력해 주세요.');if(type.mode==='shooter'){level=Number(level||1);elapsedMs=Number(elapsedMs||0);if(!Number.isInteger(level)||level<1||level>10000||!Number.isInteger(elapsedMs)||elapsedMs<0||elapsedMs>86400000)throw new Error('슈팅게임 웨이브/시간 값이 올바르지 않습니다.');detail=`wave:${level}:${elapsedMs}`;}if(type.mode==='music'){elapsedMs=Number(elapsedMs||0);if(!Number.isInteger(elapsedMs)||elapsedMs<0||elapsedMs>3600000)throw new Error('뮤직톡톡 시간 값이 올바르지 않습니다.');detail=`${cleared?'clear':'over'}:${elapsedMs}`;}if(type.mode==='apple'){elapsedMs=Number(elapsedMs||0);if(!Number.isInteger(elapsedMs)||elapsedMs<0||elapsedMs>120000)throw new Error('사과게임 시간 값이 올바르지 않습니다.');detail=cleared?`clear:${elapsedMs}`:'timeout';}if(type.mode==='score'&&!detail)detail=`${type.label} ${score}점`;await recordPool.query('UPDATE minigame_records SET nickname=$1,score_value=$2,score_detail=$3 WHERE id=$4 AND game_key=$5',[nickname,score,detail,id,type.key]);}
-      cb({ok:true,message:'기록을 수정했습니다.'});
-    })().catch(e=>{console.error('Admin record update failed:',e.message);cb({ok:false,message:e.message||'기록 수정에 실패했습니다.'});});
-  });
-
-  socket.on('admin-records:delete', ({game='bubble',id} = {}, cb = () => {}) => {
-    if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});if(!recordPool||!recordDbReady)return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});const type=ADMIN_RECORD_TYPES[game];id=Number(id);if(!type||!Number.isInteger(id)||id<1)return cb({ok:false,message:'삭제할 기록을 선택해 주세요.'});
-    const sql=type.mode==='minesweeper'?'DELETE FROM minesweeper_records WHERE id=$1':'DELETE FROM minigame_records WHERE id=$1 AND game_key=$2';recordPool.query(sql,type.mode==='minesweeper'?[id]:[id,type.key]).then(r=>cb({ok:r.rowCount>0,message:r.rowCount>0?'기록을 삭제했습니다.':'해당 기록을 찾지 못했습니다.'})).catch(e=>{console.error('Admin record delete failed:',e.message);cb({ok:false,message:'기록 삭제에 실패했습니다.'});});
-  });
   socket.on('shooter:records:list', async (_, cb=()=>{}) => {
     if(!recordPool||!recordDbReady)return cb({ok:false,records:[],message:'기록 저장소가 연결되지 않았습니다. Render의 DATABASE_URL 설정을 확인해 주세요.'});
     try { const q=await recordPool.query(`SELECT nickname,score_value AS score,score_detail AS detail,split_part(score_detail,':',2)::INTEGER AS wave,split_part(score_detail,':',3)::BIGINT AS elapsed_ms,created_at FROM minigame_records WHERE game_key='arcadeshooter' AND score_detail ~ '^wave:[0-9]+:[0-9]+$' ORDER BY score_value DESC,created_at ASC LIMIT 10`); cb({ok:true,records:q.rows}); } catch(e) { console.error('Shooter records query failed:',e.message); cb({ok:false,records:[],message:'오락실 슈팅 기록을 불러오지 못했습니다.'}); }
