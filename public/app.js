@@ -603,7 +603,7 @@ function redlightCharacter(guard){
 function redlightView(){
  const r=state.room,g=r.redlight||{},isIt=socket.id===g.itId;
  const statusText=g.phase==='green'?'🟢 술래가 뒤돌아 있음 · 지금 전진 가능':'🔴 술래가 뒤돌아봄 · 움직이면 탈락';
- const guardControls=isIt&&r.phase==='playing'?`<button id="redlightCallButton" class="btn primary" onclick="socket.emit('redlight:call')">${g.phase==='green'?'🔴 뒤돌아보기 (얼음!)':'🟢 뒤돌기 (구호 시작)'}</button><p class="sub">내가 버튼을 누르는 순간 모든 참가자에게 상태가 동시에 바뀌어요. 구호 시간을 직접 조절해 보세요.</p>`:'';
+ const guardControls=isIt&&r.phase==='playing'?`<div class="redlight-guard-controls"><button class="btn primary" onclick="socket.emit('redlight:call',{action:'green'})" ${g.phase==='green'?'disabled':''}>🟢 등을 돌리고 구호하기 · 전진 허용</button><button class="btn danger" onclick="socket.emit('redlight:call',{action:'red'})" ${g.phase==='red'?'disabled':''}>🔴 뒤돌아보기 · 얼음!</button><p class="sub">두 버튼 중 원하는 순간에 눌러 심리전을 펼치세요. 버튼을 누르면 모든 참가자에게 즉시 동기화돼요.</p></div>`:'';
  const runners=r.players.filter(p=>p.id!==g.itId);
  const phaseHelp=isIt?(g.phase==='green'?'참가자들이 움직이는 중이에요. 언제든 뒤돌아보기를 눌러 멈추게 하세요.':'참가자들이 멈춰 있어야 해요. 준비되면 뒤돌기 버튼을 눌러 다시 구호를 시작하세요.'):(g.phase==='green'?'술래가 뒤돌아 있는 동안 결승선을 향해 전진하세요! 술래가 뒤돌아보면 즉시 멈춰야 해요.':'술래가 나를 보고 있어요. 멈춘 채 술래가 뒤돌 때까지 기다리세요.');
  const phasePanel=r.phase==='playing'?`<div class="redlight-status ${g.phase==='green'?'green':'red'}">${statusText}</div>${guardControls}<p class="sub">${phaseHelp}</p>`:'';
@@ -614,6 +614,7 @@ function redlightView(){
  <p class="sub">실제 놀이처럼 술래가 직접 뒤돌아보는 순간을 정해요. 술래가 등을 보이면 전진하고, 술래가 뒤돌아보면 즉시 멈추세요. 술래가 보고 있을 때 움직이면 탈락합니다. 술래는 버튼을 자유롭게 눌러 참가자들을 긴장시키세요!</p>
  ${r.phase==='lobby'?(host()?(r.players.length>=2?'<button class="btn primary" onclick="socket.emit(&quot;redlight:start&quot;)">게임 시작</button>':'<button class="btn primary" disabled>2명 이상 참가해야 시작할 수 있어요</button>'):'<p>방장이 시작할 때까지 기다려 주세요.</p>'):''}
  ${r.phase==='countdown'?'<div class="redlight-call">준비하세요! 곧 시작합니다.</div>':''}
+ <div class="redlight-role">${isIt?'🎭 당신이 술래예요! 버튼으로 뒤돌아보는 순간을 정하세요.':`🎯 술래: ${esc(g.itNickname||'선정 중')} · 술래가 등을 보일 때만 전진하세요.`}</div>
  <div class="redlight-call" id="redlightPhrase">${esc(g.phrase||(g.phase==='green'?'무궁화 꽃이 피었습니다!':'술래가 구호를 시작할 때까지 기다리세요.'))}</div>
  ${phasePanel}
  <div class="redlight-track" id="redlightTrack"><div class="redlight-start">출발선</div><div class="redlight-finish">결승선</div><div class="redlight-guard">${redlightCharacter(true)}<small>술래${isIt?' · 나':''} · ${esc(g.itNickname||'선정 중')}</small></div>${runnerHtml}</div>

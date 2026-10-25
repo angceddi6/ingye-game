@@ -396,11 +396,13 @@ io.on('connection', socket => {
     if(room.players.size<2)return reject(socket,'무궁화 꽃이 피었습니다는 2명 이상 참가해야 시작할 수 있습니다.');
     startCountdown(socket,'redlight');
   });
-  socket.on('redlight:call',()=>{
+  socket.on('redlight:call',({action}={})=>{
     const room=getRoom(socket);if(!room||room.game!=='redlight'||room.phase!=='playing')return;
     const g=room.redlight;if(socket.id!==g.itId)return;
-    // The guard controls when to look away and when to turn back, like the real game.
-    if(g.phase==='red'){
+    // Explicit actions let the guard choose the exact moment to turn away or look back.
+    const nextPhase=action==='green'?'green':action==='red'?'red':(g.phase==='red'?'green':'red');
+    if(nextPhase===g.phase)return;
+    if(nextPhase==='green'){
       g.phase='green';g.phrase='무궁화 꽃이 피었습니다!';g.greenStartedAt=Date.now();g.turnId=(g.turnId||0)+1;
     }else{
       g.phase='red';g.phrase='얼음! 움직이면 탈락!';g.turnedAt=Date.now();
