@@ -2,11 +2,11 @@
 const socket=io();
 const $=id=>document.getElementById(id);
 let authed=false, selected=null, records=[];
-const labels={bubble:'버블 슈터',dodge:'똥피하기',typing:'타자게임',tetris:'테트리스',blockgame:'블록게임',shooter:'슈팅게임',music:'뮤직톡톡',apple:'사과게임',maze:'미로찾기',minesweeper:'지뢰게임'};
+const labels={bubble:'버블 슈터',dodge:'똥피하기',typing:'타자게임',tetris:'테트리스',blockgame:'블록게임',shooter:'슈팅게임',music:'뮤직톡톡',apple:'사과게임',maze:'미로찾기',minesweeper:'지뢰게임',loserps:'지는 가위바위보'};
 function msg(id,text,error=false){const el=$(id);el.textContent=text||'';el.classList.toggle('error',!!error)}
 function game(){return $('game').value}
 function setVisible(selector,on){document.querySelectorAll(selector).forEach(e=>e.classList.toggle('hidden',!on))}
-function updateFields(){const g=game();setVisible('.field-score',!['maze','minesweeper'].includes(g));setVisible('.field-level',['maze','shooter'].includes(g));setVisible('.field-seconds',['maze','minesweeper'].includes(g));setVisible('.field-size',g==='minesweeper');setVisible('.field-elapsed',['shooter','music','apple'].includes(g));setVisible('.field-cleared',['music','apple'].includes(g));setVisible('.field-detail',['bubble','dodge','typing','tetris','blockgame'].includes(g));clearSelection();if(authed)loadRecords()}
+function updateFields(){const g=game();setVisible('.field-score',!['maze','minesweeper'].includes(g));setVisible('.field-level',['maze','shooter'].includes(g));setVisible('.field-seconds',['maze','minesweeper'].includes(g));setVisible('.field-size',g==='minesweeper');setVisible('.field-elapsed',['shooter','music','apple'].includes(g));setVisible('.field-cleared',['music','apple'].includes(g));setVisible('.field-detail',['bubble','dodge','typing','tetris','blockgame','loserps'].includes(g));clearSelection();if(authed)loadRecords()}
 function clearSelection(){selected=null;$('updateButton').disabled=true;$('deleteButton').disabled=true;$('cancelEditButton').disabled=true;$('saveButton').disabled=false;document.querySelectorAll('#recordsBody tr').forEach(r=>r.classList.remove('selected'));msg('managerMessage','')}
 function payload(){return {game:game(),nickname:$('nickname').value.trim(),score:Number($('score').value),detail:$('detail').value.trim(),level:Number($('level').value),seconds:Number($('seconds').value),size:Number($('size').value),elapsedMs:Number($('elapsedMs').value),cleared:$('cleared').value==='true'}}
 $('loginForm').addEventListener('submit',e=>{e.preventDefault();socket.emit('admin-records:login',{password:$('adminPassword').value},res=>{msg('loginMessage',res?.message||'로그인에 실패했습니다.',!res?.ok);if(!res?.ok)return;authed=true;$('loginPanel').classList.add('hidden');$('managerPanel').classList.remove('hidden');$('adminPassword').value='';updateFields()})});

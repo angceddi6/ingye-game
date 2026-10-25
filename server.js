@@ -41,7 +41,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['shooter','music','apple','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','catchmind','gomoku','twenty','minesweeper','tagger','maze','redlight','bearbattle','territory','bubble','zombie','tetris','blockgame','othello']);
+const GAMES = new Set(['shooter','music','apple','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','catchmind','gomoku','twenty','minesweeper','tagger','maze','redlight','bearbattle','territory','bubble','zombie','tetris','blockgame','othello','loserps']);
 const CATCHMIND_CHOOSE_MS = 10_000;
 const CATCHMIND_DRAW_MS = 80_000;
 const CATCHMIND_HINT_DELAYS = [30_000,45_000,60_000];
@@ -51,7 +51,7 @@ const ADMIN_RECORD_TYPES = {
   typing:{label:'타자게임',key:'typing',mode:'score'}, tetris:{label:'테트리스',key:'tetris',mode:'score'},
   blockgame:{label:'블록게임',key:'blockgame',mode:'score'}, shooter:{label:'슈팅게임',key:'arcadeshooter',mode:'shooter'},
   music:{label:'뮤직톡톡',key:'musictalktok',mode:'music'}, apple:{label:'사과게임',key:'apple',mode:'apple'},
-  maze:{label:'미로찾기',key:'maze',mode:'maze'}, minesweeper:{label:'지뢰게임',key:'minesweeper',mode:'minesweeper'}
+  maze:{label:'미로찾기',key:'maze',mode:'maze'}, minesweeper:{label:'지뢰게임',key:'minesweeper',mode:'minesweeper'}, loserps:{label:'지는 가위바위보',key:'loserps',mode:'score'}
 };
 const adminLoginAttempts = new Map();
 
@@ -407,7 +407,7 @@ io.on('connection', socket => {
     }
   });
   socket.on('minigame:records:list', async ({game}={}, cb=()=>{}) => {
-    if (!['dodge','typing','bubble','tetris','blockgame'].includes(game)) return cb({ok:false,records:[],message:'게임 종류가 올바르지 않습니다.'});
+    if (!['dodge','typing','bubble','tetris','blockgame','loserps'].includes(game)) return cb({ok:false,records:[],message:'게임 종류가 올바르지 않습니다.'});
     if (!recordPool || !recordDbReady) return cb({ok:false,records:[],message:'영구 기록 저장소가 아직 연결되지 않았습니다.'});
     try {
       const order = game==='dodge' ? 'score_value DESC, created_at ASC' : 'score_value DESC, created_at ASC';
@@ -417,7 +417,7 @@ io.on('connection', socket => {
   });
   socket.on('minigame:records:save', async ({game,score,detail}={}, cb=()=>{}) => {
     const room=getRoom(socket), player=room?.players.get(socket.id); score=Number(score);
-    if (!room || !player || !['dodge','typing','bubble','tetris','blockgame'].includes(game) || (['tetris','blockgame'].includes(game)&&room.game!==game) || (game==='bubble' && (room.game!=='bubble'||room.phase!=='finished')) || !Number.isInteger(score) || score<0 || score>1000000) return cb({ok:false,message:'기록을 저장할 수 없습니다.'});
+    if (!room || !player || !['dodge','typing','bubble','tetris','blockgame','loserps'].includes(game) || (['tetris','blockgame'].includes(game)&&room.game!==game) || (game==='bubble' && (room.game!=='bubble'||room.phase!=='finished')) || (game==='loserps' && room.game!=='loserps') || !Number.isInteger(score) || score<0 || score>1000000) return cb({ok:false,message:'기록을 저장할 수 없습니다.'});
     if (!recordPool || !recordDbReady) return cb({ok:false,message:'영구 기록 저장소가 아직 연결되지 않았습니다.'});
     try { await recordPool.query('INSERT INTO minigame_records (game_key,nickname,score_value,score_detail) VALUES ($1,$2,$3,$4)',[game,String(player.nickname).slice(0,40),score,String(detail||'').slice(0,100)]); cb({ok:true}); io.emit('minigame:records:updated',{game}); }
     catch(e) { console.error('Game record save failed:',e.message); cb({ok:false,message:'기록 저장에 실패했습니다.'}); }
