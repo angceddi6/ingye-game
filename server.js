@@ -308,6 +308,103 @@ io.on('connection', socket => {
     })().catch(e=>{console.error('Admin record update failed:',e.message);cb({ok:false,message:e.message||'기록 수정에 실패했습니다.'});});
   });
 
+
+  socket.on('admin-records:storage', async (_, cb=()=>{}) => {
+    if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});
+    if (!recordPool || !recordDbReady) return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});
+    try {
+      const q = await recordPool.query(`
+        SELECT pg_database_size(current_database())::BIGINT AS database_bytes,
+          pg_total_relation_size('minigame_records')::BIGINT AS minigame_bytes,
+          pg_total_relation_size('minesweeper_records')::BIGINT AS minesweeper_bytes,
+          (SELECT COUNT(*)::BIGINT FROM minigame_records) AS minigame_count,
+          (SELECT COUNT(*)::BIGINT FROM minesweeper_records) AS minesweeper_count
+      `);
+      cb({ok:true, ...Object.fromEntries(Object.entries(q.rows[0]).map(([k,v])=>[k,String(v)]))});
+    } catch(e) {
+      console.error('Admin storage query failed:',e.message);
+      cb({ok:false,message:'DB 사용량을 조회하지 못했습니다.'});
+    }
+  });
+
+  const getAdminCleanupOrder = type => {
+    if (type.mode==='maze') return `score_value DESC, CASE WHEN score_detail ~ '^[0-9]+(\\.[0-9]+)?$' THEN score_detail::numeric ELSE 999999999 END ASC, created_at ASC`;
+    if (type.mode==='music' || type.mode==='apple') return `score_value DESC, CASE WHEN score_detail ~ '^clear:[0-9]+$' THEN 0 ELSE 1 END ASC, CASE WHEN score_detail ~ '^(clear|over):[0-9]+$' THEN split_part(score_detail,':',2)::BIGINT ELSE 999999999 END ASC, created_at ASC`;
+    return `score_value DESC, created_at ASC`;
+  };
+
+  socket.on('admin-records:cleanup-preview', async ({game='bubble',size=10}={}, cb=()=>{}) => {
+    if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});
+    if (!recordPool || !recordDbReady) return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});
+    const type=ADMIN_RECORD_TYPES[game];
+    if (!type) return cb({ok:false,message:'지원하지 않는 게임입니다.'});
+    try {
+      let total, topRecords;
+      if (type.mode==='minesweeper') {
+        size=Number(size);
+        if (![5,10,20,30,40,50].includes(size)) return cb({ok:false,message:'보드 크기를 선택해 주세요.'});
+        const q=await recordPool.query('SELECT COUNT(*)::BIGINT AS total FROM minesweeper_records WHERE board_size=$1',[size]);
+        const top=await recordPool.query('SELECT id,nickname,elapsed_seconds AS score,created_at FROM minesweeper_records WHERE board_size=$1 ORDER BY elapsed_seconds ASC,created_at ASC,id ASC LIMIT 10',[size]);
+        total=Number(q.rows[0].total);topRecords=top.rows;
+      } else {
+        const filter = type.mode==='shooter' ? ` AND score_detail ~ '^wave:[0-9]+:[0-9]+$'` : '';
+        const q=await recordPool.query(`SELECT COUNT(*)::BIGINT AS total FROM minigame_records WHERE game_key=$1`,[type.key]);
+        const top=await recordPool.query(`SELECT id,nickname,score_value AS score,score_detail AS detail,created_at FROM minigame_records WHERE game_key=$1${filter} ORDER BY ${getAdminCleanupOrder(type)}, id ASC LIMIT 10`,[type.key]);
+        total=Number(q.rows[0].total);topRecords=top.rows;
+      }
+      cb({ok:true,total,keep:topRecords.length,deleteCount:Math.max(0,total-topRecords.length),topRecords});
+    } catch(e) {
+      console.error('Admin cleanup preview failed:',e.message);
+      cb({ok:false,message:'정리 대상 미리보기에 실패했습니다.'});
+    }
+  });
+
+  socket.on('admin-records:cleanup', async ({game='bubble',size=10}={}, cb=()=>{}) => {
+    if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});
+    if (!recordPool || !recordDbReady) return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});
+    const type=ADMIN_RECORD_TYPES[game];
+    if (!type) return cb({ok:false,message:'지원하지 않는 게임입니다.'});
+    const client=await recordPool.connect();
+    try {
+      await client.query('BEGIN');
+      let result;
+      if (type.mode==='minesweeper') {
+        size=Number(size);
+        if (![5,10,20,30,40,50].includes(size)) throw new Error('보드 크기를 선택해 주세요.');
+        result=await client.query(`
+          DELETE FROM minesweeper_records
+          WHERE board_size=$1 AND id NOT IN (
+            SELECT id FROM minesweeper_records
+            WHERE board_size=$1
+            ORDER BY elapsed_seconds ASC, created_at ASC, id ASC
+            LIMIT 10
+          )`,[size]);
+      } else {
+        const filter = type.mode==='shooter' ? ` AND score_detail ~ '^wave:[0-9]+:[0-9]+$'` : '';
+        result=await client.query(`
+          DELETE FROM minigame_records
+          WHERE game_key=$1 AND id NOT IN (
+            SELECT id FROM minigame_records
+            WHERE game_key=$1${filter}
+            ORDER BY ${getAdminCleanupOrder(type)}, id ASC
+            LIMIT 10
+          )`,[type.key]);
+      }
+      await client.query('COMMIT');
+      cb({ok:true,deleted:result.rowCount,message:`TOP 10 기록을 보존하고 ${result.rowCount}건을 삭제했습니다.`});
+      if(type.mode==='minesweeper') io.emit('minesweeper:records:updated',{size:Number(size)});
+      else if(type.mode==='maze') io.emit('maze:records:updated');
+      else if(type.mode==='shooter') io.emit('shooter:records:updated');
+      else if(type.mode==='music') io.emit('music:records:updated');
+      else if(type.mode==='apple') io.emit('apple:records:updated');
+      else io.emit('minigame:records:updated',{game:type.key});
+    } catch(e) {
+      await client.query('ROLLBACK').catch(()=>{});
+      console.error('Admin cleanup failed:',e.message);
+      cb({ok:false,message:e.message||'기록 정리에 실패했습니다.'});
+    } finally { client.release(); }
+  });
+
   socket.on('admin-records:delete', ({game='bubble',id} = {}, cb = () => {}) => {
     if (!socket.data.adminRecordsAuthed) return cb({ok:false,message:'관리자 인증이 필요합니다.'});if(!recordPool||!recordDbReady)return cb({ok:false,message:'데이터베이스 연결이 준비되지 않았습니다.'});const type=ADMIN_RECORD_TYPES[game];id=Number(id);if(!type||!Number.isInteger(id)||id<1)return cb({ok:false,message:'삭제할 기록을 선택해 주세요.'});
     const sql=type.mode==='minesweeper'?'DELETE FROM minesweeper_records WHERE id=$1':'DELETE FROM minigame_records WHERE id=$1 AND game_key=$2';recordPool.query(sql,type.mode==='minesweeper'?[id]:[id,type.key]).then(r=>cb({ok:r.rowCount>0,message:r.rowCount>0?'기록을 삭제했습니다.':'해당 기록을 찾지 못했습니다.'})).catch(e=>{console.error('Admin record delete failed:',e.message);cb({ok:false,message:'기록 삭제에 실패했습니다.'});});

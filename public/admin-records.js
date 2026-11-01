@@ -9,9 +9,9 @@ function setVisible(selector,on){document.querySelectorAll(selector).forEach(e=>
 function updateFields(){const g=game();setVisible('.field-score',!['maze','minesweeper'].includes(g));setVisible('.field-level',['maze','shooter'].includes(g));setVisible('.field-seconds',['maze','minesweeper'].includes(g));setVisible('.field-size',g==='minesweeper');setVisible('.field-elapsed',['shooter','music','apple'].includes(g));setVisible('.field-cleared',['music','apple'].includes(g));setVisible('.field-detail',['bubble','dodge','typing','tetris','blockgame','loserps'].includes(g));clearSelection();if(authed)loadRecords()}
 function clearSelection(){selected=null;$('updateButton').disabled=true;$('deleteButton').disabled=true;$('cancelEditButton').disabled=true;$('saveButton').disabled=false;document.querySelectorAll('#recordsBody tr').forEach(r=>r.classList.remove('selected'));msg('managerMessage','')}
 function payload(){return {game:game(),nickname:$('nickname').value.trim(),score:Number($('score').value),detail:$('detail').value.trim(),level:Number($('level').value),seconds:Number($('seconds').value),size:Number($('size').value),elapsedMs:Number($('elapsedMs').value),cleared:$('cleared').value==='true'}}
-$('loginForm').addEventListener('submit',e=>{e.preventDefault();socket.emit('admin-records:login',{password:$('adminPassword').value},res=>{msg('loginMessage',res?.message||'로그인에 실패했습니다.',!res?.ok);if(!res?.ok)return;authed=true;$('loginPanel').classList.add('hidden');$('managerPanel').classList.remove('hidden');$('adminPassword').value='';updateFields()})});
+$('loginForm').addEventListener('submit',e=>{e.preventDefault();socket.emit('admin-records:login',{password:$('adminPassword').value},res=>{msg('loginMessage',res?.message||'로그인에 실패했습니다.',!res?.ok);if(!res?.ok)return;authed=true;$('loginPanel').classList.add('hidden');$('managerPanel').classList.remove('hidden');$('adminPassword').value='';updateFields();loadStorage();loadCleanupPreview()})});
 $('logoutButton').addEventListener('click',()=>{socket.emit('admin-records:logout');authed=false;selected=null;$('managerPanel').classList.add('hidden');$('loginPanel').classList.remove('hidden');msg('loginMessage','로그아웃했습니다.');});
-$('game').addEventListener('change',updateFields);$('size').addEventListener('change',()=>{if(authed&&game()==='minesweeper')loadRecords()});$('refreshButton').addEventListener('click',loadRecords);$('cancelEditButton').addEventListener('click',clearSelection);
+$('game').addEventListener('change',()=>{updateFields();loadCleanupPreview()});$('size').addEventListener('change',()=>{if(authed&&game()==='minesweeper'){loadRecords();loadCleanupPreview()}});$('refreshButton').addEventListener('click',loadRecords);$('cancelEditButton').addEventListener('click',clearSelection);
 function loadRecords(){if(!authed)return;const g=game();socket.emit('admin-records:list',{game:g,size:Number($('size').value)},res=>{if(!res?.ok){msg('managerMessage',res?.message||'기록 조회 실패',true);return}records=res.records||[];renderRecords()})}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function detailText(r){const g=game();if(g==='minesweeper')return `${r.size}×${r.size} · ${r.seconds}초`;if(g==='maze')return `레벨 ${r.score} · ${r.detail}초`;if(g==='shooter'){const p=String(r.detail||'').split(':');return `웨이브 ${p[1]||'?'} · ${Math.round(Number(p[2]||0)/1000)}초`;}if(g==='music'||g==='apple')return String(r.detail||'');return String(r.detail||'')}
@@ -22,3 +22,48 @@ $('deleteButton').addEventListener('click',()=>{if(!selected)return;if(!confirm(
 $('updateButton').addEventListener('click',()=>{if(!selected)return;const data={...payload(),id:selected.id};if(!confirm(`선택한 ID ${selected.id} 기록을 수정할까요?`))return;socket.emit('admin-records:update',data,res=>{msg('managerMessage',res?.message||'수정 실패',!res?.ok);if(res?.ok){clearSelection();loadRecords()}})});
 $('recordsBody').addEventListener('contextmenu',e=>{const tr=e.target.closest('tr[data-index]');if(!tr)return;e.preventDefault();const r=records[Number(tr.dataset.index)];if(!r)return;if(!confirm(`ID ${r.id} · ${r.nickname} 기록을 삭제할까요? 삭제 후 복구할 수 없습니다.`))return;socket.emit('admin-records:delete',{game:game(),id:r.id},res=>{msg('managerMessage',res?.message||'삭제 실패',!res?.ok);if(res?.ok){clearSelection();loadRecords()}})});
 socket.on('connect_error',()=>msg('loginMessage','서버에 연결하지 못했습니다. 페이지를 새로고침해 주세요.',true));
+
+function formatBytes(value){
+  const n=Number(value)||0;
+  if(n<1024)return `${n} B`;
+  if(n<1024*1024)return `${(n/1024).toFixed(1)} KB`;
+  if(n<1024*1024*1024)return `${(n/1024/1024).toFixed(2)} MB`;
+  return `${(n/1024/1024/1024).toFixed(3)} GB`;
+}
+function loadStorage(){
+  if(!authed)return;
+  socket.emit('admin-records:storage',{},res=>{
+    if(!res?.ok){$('databaseBytes').textContent=res?.message||'조회 실패';return}
+    $('databaseBytes').textContent=formatBytes(res.database_bytes);
+    $('minigameBytes').textContent=formatBytes(res.minigame_bytes);
+    $('minesweeperBytes').textContent=formatBytes(res.minesweeper_bytes);
+    $('minigameCount').textContent=`${Number(res.minigame_count).toLocaleString('ko-KR')}건`;
+    $('minesweeperCount').textContent=`${Number(res.minesweeper_count).toLocaleString('ko-KR')}건`;
+  });
+}
+function loadCleanupPreview(){
+  if(!authed)return;
+  $('cleanupButton').disabled=true;
+  $('cleanupPreview').textContent='삭제 대상을 계산하고 있어요...';
+  socket.emit('admin-records:cleanup-preview',{game:game(),size:Number($('size').value)},res=>{
+    if(!res?.ok){$('cleanupPreview').textContent=res?.message||'미리보기에 실패했습니다.';return}
+    $('cleanupButton').disabled=Number(res.deleteCount)===0;
+    const top=(res.topRecords||[]).map((r,i)=>`<li>${i+1}위 · ${esc(r.nickname)} · ${game()==='minesweeper'?`${esc(r.score)}초`:esc(r.score)}${r.detail?` · ${esc(r.detail)}`:''}</li>`).join('');
+    $('cleanupPreview').innerHTML=`전체 <strong>${Number(res.total).toLocaleString('ko-KR')}건</strong> 중 TOP 10 <strong>${res.keep}건</strong>은 보존하고, <strong>${Number(res.deleteCount).toLocaleString('ko-KR')}건</strong>을 삭제할 수 있어요.${top?`<div class="muted">보존될 TOP 10</div><ul>${top}</ul>`:''}`;
+    $('cleanupButton').dataset.deleteCount=String(res.deleteCount);
+  });
+}
+$('storageRefreshButton').addEventListener('click',loadStorage);
+$('cleanupPreviewButton').addEventListener('click',loadCleanupPreview);
+$('cleanupButton').addEventListener('click',()=>{
+  const count=Number($('cleanupButton').dataset.deleteCount)||0;
+  if(!authed||count<=0)return;
+  const target=game()==='minesweeper'?`지뢰게임 ${$('size').value}×${$('size').value}`:labels[game()];
+  if(!confirm(`${target}의 TOP 10을 보존하고 나머지 ${count}건을 삭제할까요?\n삭제한 기록은 복구할 수 없습니다.`))return;
+  $('cleanupButton').disabled=true;
+  socket.emit('admin-records:cleanup',{game:game(),size:Number($('size').value)},res=>{
+    msg('cleanupMessage',res?.message||'기록 정리에 실패했습니다.',!res?.ok);
+    if(res?.ok){loadRecords();loadStorage();loadCleanupPreview()}
+    else loadCleanupPreview();
+  });
+});

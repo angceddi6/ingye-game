@@ -15,6 +15,20 @@
     </section>
     <section class="panel hidden" id="managerPanel">
       <div class="toolbar"><div><h2>기록 관리</h2><p>게임을 선택하면 저장된 기록이 표시됩니다.</p></div><button class="secondary" id="logoutButton" type="button">로그아웃</button></div>
+      <section class="storage-card">
+        <div class="storage-title"><div><h3>데이터베이스 사용량</h3><p>현재 DB 전체 및 게임 기록 테이블의 실제 사용량</p></div><button class="secondary" id="storageRefreshButton" type="button">사용량 새로고침</button></div>
+        <div class="storage-stats">
+          <div><span>DB 전체</span><strong id="databaseBytes">확인 중...</strong></div>
+          <div><span>일반 게임 기록</span><strong id="minigameBytes">-</strong><small id="minigameCount"></small></div>
+          <div><span>지뢰게임 기록</span><strong id="minesweeperBytes">-</strong><small id="minesweeperCount"></small></div>
+        </div>
+      </section>
+      <section class="cleanup-card">
+        <div><h3>TOP 10 외 기록 정리</h3><p>선택한 게임의 현재 TOP 10을 보존하고 나머지 기록만 삭제합니다. 삭제한 기록은 복구할 수 없습니다.</p></div>
+        <div class="cleanup-actions"><button class="secondary" id="cleanupPreviewButton" type="button">삭제 대상 미리보기</button><button class="danger" id="cleanupButton" type="button" disabled>TOP 10 외 기록 삭제</button></div>
+        <div id="cleanupMessage" class="message" role="status"></div>
+        <div id="cleanupPreview" class="cleanup-preview">게임을 선택한 뒤 미리보기를 눌러 주세요.</div>
+      </section>
       <div class="form-grid">
         <label>게임<select id="game">
           <option value="bubble">버블 슈터</option><option value="dodge">똥피하기</option><option value="typing">타자게임</option><option value="tetris">테트리스</option><option value="blockgame">블록게임</option><option value="shooter">슈팅게임</option><option value="music">뮤직톡톡</option><option value="apple">사과게임</option><option value="maze">미로찾기</option><option value="minesweeper">지뢰게임</option><option value="loserps">지는 가위바위보</option>
