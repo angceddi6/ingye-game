@@ -1236,7 +1236,7 @@ function spawnDodgeBatch(room){
   if(!rooms.has(room.code)||room.game!=='dodge'||room.phase!=='playing')return;
   const now=Date.now(),level=Math.max(3,room.dodge.countLevel||3),speed=Math.max(2,room.dodge.speedLevel||2);
   const duration=Math.max(750,2750-speed*220);
-  const batch=Array.from({length:level},()=>({id:`${room.code}-${++room.dodge.dropSeq}`,x:Math.random()*100,bornAt:now-Math.random()*Math.min(650,duration*0.45),duration}));
+  const batch=Array.from({length:level},()=>({id:`${room.code}-${++room.dodge.dropSeq}`,x:Math.random()*100,bornAt:now,duration}));
   room.dodge.drops=(room.dodge.drops||[]).filter(d=>now-d.bornAt<d.duration+350).concat(batch);
   io.to(room.code).emit('dodge:drops',batch);
   const delay=Math.max(170,720-level*65);
