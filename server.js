@@ -733,7 +733,7 @@ io.on('connection', socket => {
   socket.on('bingo:finish', () => { const room=getRoom(socket); if(!isHost(room,socket)||room.game!=='bingo'||!room.bingoRanking.length)return; room.phase='finished';emitRoom(room); });
 
   socket.on('dodge:start', () => startCountdown(socket,'dodge'));
-  socket.on('dodge:move', x => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='dodge'||room.phase!=='playing'||!p?.alive)return; p.x=Math.max(3,Math.min(97,Number(x)||50)); socket.to(room.code).emit('player:move',{id:socket.id,x:p.x}); });
+  socket.on('dodge:move', x => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='dodge'||room.phase!=='playing'||!p?.alive)return; p.x=Math.max(0,Math.min(100,Number(x)||50)); socket.to(room.code).emit('player:move',{id:socket.id,x:p.x}); });
   socket.on('dodge:hit', () => { const room=getRoom(socket); const p=room?.players.get(socket.id); if(!room||room.game!=='dodge'||room.phase!=='playing'||!p?.alive)return; p.alive=false;p.survived=Date.now()-room.dodge.startedAt; room.dodge.ranking.unshift({id:p.id,nickname:p.nickname,time:p.survived}); if([...room.players.values()].every(q=>!q.alive)){room.phase='finished';clearTimers(room); if(recordPool&&recordDbReady){for(const q of room.players.values()){const ms=q.survived||0;recordPool.query('INSERT INTO minigame_records (game_key,nickname,score_value,score_detail) VALUES ($1,$2,$3,$4)',['dodge',String(q.nickname).slice(0,40),Math.floor(ms/1000),(ms/1000).toFixed(1)+'초 생존']).then(()=>io.emit('minigame:records:updated',{game:'dodge'})).catch(e=>console.error('Dodge record save failed:',e.message));}}} emitRoom(room); });
 
   socket.on('race:start', () => startCountdown(socket,'race'));
@@ -1236,7 +1236,7 @@ function spawnDodgeBatch(room){
   if(!rooms.has(room.code)||room.game!=='dodge'||room.phase!=='playing')return;
   const now=Date.now(),level=Math.max(3,room.dodge.countLevel||3),speed=Math.max(2,room.dodge.speedLevel||2);
   const duration=Math.max(750,2750-speed*220);
-  const batch=Array.from({length:level},()=>({id:`${room.code}-${++room.dodge.dropSeq}`,x:2+Math.random()*94,bornAt:now,duration}));
+  const batch=Array.from({length:level},()=>({id:`${room.code}-${++room.dodge.dropSeq}`,x:Math.random()*100,bornAt:now-Math.random()*Math.min(650,duration*0.45),duration}));
   room.dodge.drops=(room.dodge.drops||[]).filter(d=>now-d.bornAt<d.duration+350).concat(batch);
   io.to(room.code).emit('dodge:drops',batch);
   const delay=Math.max(170,720-level*65);
