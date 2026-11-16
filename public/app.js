@@ -141,13 +141,13 @@ function sugarStackView(){
 }
 function sugarStart(){
  if(sugarRaf)cancelAnimationFrame(sugarRaf);clearInterval(sugarTimer);
- sugarStack={running:true,over:false,blocks:[],x:380,dir:1,last:performance.now(),fall:null,scoreSaved:false,tilt:0};
+ sugarStack={running:true,over:false,blocks:[],x:380,dir:1,last:performance.now(),fall:null,scoreSaved:false,tilt:0,cameraY:0};
  render();requestAnimationFrame(()=>{sugarDraw();});
 }
 function sugarDrop(){
  const g=sugarStack;if(!g?.running||g.fall)return;
  const n=g.blocks.length, w=56, y=440-n*30;
- g.fall={x:g.x,y:30,vy:0,w,angle:0};
+ g.fall={x:g.x,y:30+(g.cameraY||0),vy:0,w,angle:0};
 }
 function sugarFinish(){
  const g=sugarStack;if(!g||g.over||g.collapsing)return;g.running=false;g.collapsing=true;g.collapseStarted=performance.now();
@@ -158,22 +158,24 @@ function sugarDraw(){
  const g=sugarStack, c=document.getElementById('sugarCanvas');if(!g||!c)return;
  const ctx=c.getContext('2d'),now=performance.now(),dt=Math.min(.04,(now-g.last)/1000);g.last=now;
  ctx.clearRect(0,0,760,540);ctx.fillStyle='#f7f1e5';ctx.fillRect(0,0,760,540);
- // subtle stage
+ // Camera follows the top of the tower. World coordinates and physics stay unchanged.
+ const topY=g.blocks.length?Math.min(...g.blocks.map(b=>b.y-15)):444;
+ const targetCamera=Math.max(0,245-topY);
+ g.cameraY+=(targetCamera-g.cameraY)*Math.min(1,dt*5);
+ // World layer: the cracker and lower cubes naturally scroll down and out of view.
+ ctx.save();ctx.translate(0,g.cameraY);
  ctx.fillStyle='#d6ad78';ctx.fillRect(235,474,290,18);ctx.fillStyle='#b77c45';ctx.fillRect(250,492,260,12);
- // tower collapse physics: blocks fall and scatter visibly after game over
+ // tower collapse physics
  if(g.collapsing){
   const elapsed=(now-(g.collapseLast||now))/1000;g.collapseLast=now;
   g.blocks.forEach((b,i)=>{b.vy=(b.vy||0)+900*elapsed;b.x+=(b.vx||0)*elapsed;b.y+=(b.vy||0)*elapsed;b.angle=(b.angle||0)+(b.spin||0)*elapsed;});
-  if(now-g.collapseStarted>1250){g.collapsing=false;g.over=true;render();return;}
+  if(now-g.collapseStarted>1250){g.collapsing=false;g.over=true;ctx.restore();render();return;}
  }
  g.blocks.forEach((b,i)=>{ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.angle||0);ctx.fillStyle='#fff';ctx.strokeStyle='#d9d9d9';ctx.lineWidth=2;ctx.fillRect(-28,-15,56,30);ctx.strokeRect(-28,-15,56,30);ctx.restore()});
  if(g.running){
   const speed=190+g.blocks.length*14;
   const speedLabel=document.getElementById('sugarSpeed');if(speedLabel)speedLabel.textContent=g.blocks.length===0?'기본':`${Math.round(speed)} px/s`;
-  // 집게 이동 구간을 화면 안쪽으로 모아 왕복 대기 시간을 줄임
   g.x+=g.dir*speed*dt;if(g.x>650){g.x=650;g.dir=-1}if(g.x<110){g.x=110;g.dir=1}
-  ctx.strokeStyle='#777';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(g.x,0);ctx.lineTo(g.x,15);ctx.stroke();
-  ctx.fillStyle='#777';ctx.fillRect(g.x-20,12,40,8);ctx.fillStyle='#fff';ctx.strokeStyle='#bbb';ctx.lineWidth=2;ctx.fillRect(g.x-28,24,56,30);ctx.strokeRect(g.x-28,24,56,30);
   if(g.fall){
    const f=g.fall;f.vy+=950*dt;f.y+=f.vy*dt;
    const baseY=459-g.blocks.length*30;
@@ -183,7 +185,6 @@ function sugarDraw(){
     if(Math.abs(offset)>(g.blocks.length===0?115:34)){g.blocks.push({x:f.x,y:baseY-15,angle:Math.sign(offset)*.12});g.fall=null;setTimeout(()=>sugarFinish(),350);}
     else{
      const nx=f.x;g.blocks.push({x:nx,y:baseY-15,angle:Math.max(-0.10,Math.min(0.10,offset*.0025))});
-     // center-of-mass balance test: accumulated lateral drift
      if(g.blocks.length>1)g.tilt=(g.tilt||0)+(nx-380)*.0007;
      g.fall=null;
      if(Math.abs(g.tilt)>0.42){setTimeout(()=>sugarFinish(),250)}
@@ -191,6 +192,13 @@ function sugarDraw(){
     }
    }else{ctx.save();ctx.translate(f.x,f.y);ctx.rotate(f.angle);ctx.fillStyle='#fff';ctx.strokeStyle='#bbb';ctx.fillRect(-28,-15,56,30);ctx.strokeRect(-28,-15,56,30);ctx.restore()}
   }
+ }
+ ctx.restore();
+ // The claw stays at the top of the viewport while the tower scrolls beneath it.
+ if(g.running){
+  ctx.strokeStyle='#777';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(g.x,0);ctx.lineTo(g.x,15);ctx.stroke();
+  ctx.fillStyle='#777';ctx.fillRect(g.x-20,12,40,8);
+  if(!g.fall){ctx.fillStyle='#fff';ctx.strokeStyle='#bbb';ctx.lineWidth=2;ctx.fillRect(g.x-28,24,56,30);ctx.strokeRect(g.x-28,24,56,30);}
  }
  if(g.running||g.collapsing)sugarRaf=requestAnimationFrame(sugarDraw);
 }
