@@ -11,7 +11,7 @@ let state={room:null,serverTimeOffset:0,nickname:'',selected:'apple',topic:'',bi
 let mazeState={level:1,start:0,elapsed:0,drag:false,done:false,records:[],error:'',loading:false,saved:false};let mazeRaf=0;let redlightPhraseTimer=0;let redlightPhraseIndex=0;
 let bingoDraft=null;
 let bingoComposing=false;
-const gameMeta={bingo:['⭕','빙고'],dodge:['💩','똥피하기'],race:['🏎️','레이싱'],timing:['⏱️','타이밍 게임'],liar:['🕵️','라이어 게임'],bomb:['💣','폭탄 돌리기'],memory:['🃏','카드 뒤집기'],typing:['⌨️','타자게임'],waterball:['💦','물풍선 대전'],catchmind:['🎨','캐치마인드'],gomoku:['⚫','오목'],twenty:['❓','스무고개'],minesweeper:['💣','지뢰게임'],tagger:['🏃','술래잡기'],maze:['🌀','미로찾기'],redlight:['🌺','무궁화 꽃이 피었습니다'],apple:['🍎','사과게임'],music:['🎵','뮤직톡톡'],shooter:['🚀','슈팅게임'],bearbattle:['🧸','달구vs살구'],territory:['🗺️','땅따먹기'],bubble:['🫧','버블 슈터'],zombie:['🧟','좀비 서바이벌'],tetris:['T','테트리스'],blockgame:['🧱','블록게임'],othello:['⚫','오델로'],loserps:['✌️','지는 가위바위보'],sugarstack:['🧊','각설탕 쌓기']};
+const gameMeta={bingo:['⭕','빙고'],dodge:['💩','똥피하기'],race:['🏎️','레이싱'],timing:['⏱️','타이밍 게임'],liar:['🕵️','라이어 게임'],bomb:['💣','폭탄 돌리기'],memory:['🃏','카드 뒤집기'],typing:['⌨️','타자게임'],waterball:['💦','물풍선 대전'],catchmind:['🎨','캐치마인드'],gomoku:['⚫','오목'],twenty:['❓','스무고개'],minesweeper:['💣','지뢰게임'],tagger:['🏃','술래잡기'],maze:['🌀','미로찾기'],redlight:['🌺','무궁화 꽃이 피었습니다'],apple:['🍎','사과게임'],music:['🎵','뮤직톡톡'],shooter:['🚀','슈팅게임'],bearbattle:['🧸','달구vs살구'],territory:['🗺️','땅따먹기'],bubble:['🫧','버블 슈터'],zombie:['🧟','좀비 서바이벌'],tetris:['T','테트리스'],blockgame:['🧱','블록게임'],othello:['⚫','오델로'],loserps:['✌️','지는 가위바위보'],sugarstack:['⬜','각설탕 쌓기']};
 const esc=s=>String(s??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
 const me=()=>state.room?.players.find(p=>p.id===socket.id);
 const host=()=>state.room?.hostId===socket.id;
@@ -150,9 +150,9 @@ function sugarDrop(){
  g.fall={x:g.x,y:30,vy:0,w,angle:0};
 }
 function sugarFinish(){
- const g=sugarStack;if(!g||g.over)return;g.running=false;g.over=true;
+ const g=sugarStack;if(!g||g.over||g.collapsing)return;g.running=false;g.collapsing=true;g.collapseStarted=performance.now();
+ g.blocks.forEach((b,i)=>{b.vx=(b.x-380)*0.9+(i%2?35:-35);b.vy=-20-i*3;b.spin=(i%2?1:-1)*(0.7+i*.05)});
  if(!g.scoreSaved){g.scoreSaved=true;socket.emit('minigame:records:save',{game:'sugarstack',score:g.blocks.length,detail:`각설탕 ${g.blocks.length}개`},res=>{if(!res?.ok)toast(res?.message||'기록 저장 실패','error');loadSugarRecords()})}
- render();
 }
 function sugarDraw(){
  const g=sugarStack, c=document.getElementById('sugarCanvas');if(!g||!c)return;
@@ -160,7 +160,12 @@ function sugarDraw(){
  ctx.clearRect(0,0,760,540);ctx.fillStyle='#f7f1e5';ctx.fillRect(0,0,760,540);
  // subtle stage
  ctx.fillStyle='#d6ad78';ctx.fillRect(235,474,290,18);ctx.fillStyle='#b77c45';ctx.fillRect(250,492,260,12);
- // tower physics
+ // tower collapse physics: blocks fall and scatter visibly after game over
+ if(g.collapsing){
+  const elapsed=(now-(g.collapseLast||now))/1000;g.collapseLast=now;
+  g.blocks.forEach((b,i)=>{b.vy=(b.vy||0)+900*elapsed;b.x+=(b.vx||0)*elapsed;b.y+=(b.vy||0)*elapsed;b.angle=(b.angle||0)+(b.spin||0)*elapsed;});
+  if(now-g.collapseStarted>1250){g.collapsing=false;g.over=true;render();return;}
+ }
  g.blocks.forEach((b,i)=>{ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.angle||0);ctx.fillStyle='#fff';ctx.strokeStyle='#d9d9d9';ctx.lineWidth=2;ctx.fillRect(-28,-15,56,30);ctx.strokeRect(-28,-15,56,30);ctx.restore()});
  if(g.running){
   const speed=190+g.blocks.length*14;
@@ -177,7 +182,7 @@ function sugarDraw(){
     const offset=f.x-target;
     if(Math.abs(offset)>(g.blocks.length===0?115:34)){g.blocks.push({x:f.x,y:baseY-15,angle:Math.sign(offset)*.12});g.fall=null;setTimeout(()=>sugarFinish(),350);}
     else{
-     const nx=target+offset*.32;g.blocks.push({x:nx,y:baseY-15,angle:offset*.006});
+     const nx=f.x;g.blocks.push({x:nx,y:baseY-15,angle:Math.max(-0.10,Math.min(0.10,offset*.0025))});
      // center-of-mass balance test: accumulated lateral drift
      if(g.blocks.length>1)g.tilt=(g.tilt||0)+(nx-380)*.0007;
      g.fall=null;
@@ -187,7 +192,7 @@ function sugarDraw(){
    }else{ctx.save();ctx.translate(f.x,f.y);ctx.rotate(f.angle);ctx.fillStyle='#fff';ctx.strokeStyle='#bbb';ctx.fillRect(-28,-15,56,30);ctx.strokeRect(-28,-15,56,30);ctx.restore()}
   }
  }
- if(g.running)sugarRaf=requestAnimationFrame(sugarDraw);
+ if(g.running||g.collapsing)sugarRaf=requestAnimationFrame(sugarDraw);
 }
 function sugarHandleKey(e){if(state.room?.game!=='sugarstack'||!sugarStack?.running)return;if([' ','Spacebar'].includes(e.key)||e.key.length===1){e.preventDefault();sugarDrop()}}
 window.addEventListener('keydown',sugarHandleKey);
