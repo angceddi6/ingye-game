@@ -134,14 +134,14 @@ function sugarStackView(){
  const started=!!sugarStack?.running, over=!!sugarStack?.over;
  const rows=sugarRecords.map((r,i)=>`<div class="mine-record-row"><b class="mine-record-rank">${i+1}</b><span class="mine-record-name">${esc(r.nickname)}</span><b class="mine-record-time">${Number(r.score)}개</b><span class="mine-record-date">${new Date(r.created_at).toLocaleDateString('ko-KR')}</span></div>`).join('');
  return `<div class="center"><div class="title">🧊 각설탕 쌓기 <span class="game-badge">1인용</span></div><p class="sub">좌우로 움직이는 집게의 타이밍을 맞춰 각설탕을 쌓으세요. 클릭·스페이스바·아무 키로 투하!</p></div>
- <div class="sugar-hud"><b>쌓은 개수 <span id="sugarCount">${sugarStack?.blocks?.length||0}</span></b><b>투하 제한 <span id="sugarTime">4.0</span>초</b></div>
+ <div class="sugar-hud"><b>쌓은 개수 <span id="sugarCount">${sugarStack?.blocks?.length||0}</span></b><b>집게 속도 <span id="sugarSpeed">기본</span></b></div>
  <div class="sugar-stage"><canvas id="sugarCanvas" width="760" height="540" aria-label="각설탕 쌓기 게임"></canvas></div>
  <div class="center">${!started&&!over?`<button class="btn primary" onclick="sugarStart()">각설탕 쌓기 시작</button>`:''}${over?`<h2>게임 오버!</h2><p>최종 기록 <b>${sugarStack.blocks.length}개</b></p><button class="btn primary" onclick="sugarStart()">다시 하기</button>`:''}<p id="sugarMessage" class="sub">${over?'탑이 무너졌어요!':started?'타이밍에 맞춰 각설탕을 떨어뜨리세요.':'크래커 위에 균형을 맞춰 쌓아보세요.'}</p></div>
  <section class="mine-record-panel"><h3>🏆 각설탕 쌓기 TOP 10</h3>${sugarRecordsError?`<p class="mine-record-error">${esc(sugarRecordsError)}</p>`:rows||'<p class="sub">아직 기록이 없습니다.</p>'}<p class="sub">쌓은 각설탕 개수 기준 · 상위 10개</p></section>`;
 }
 function sugarStart(){
  if(sugarRaf)cancelAnimationFrame(sugarRaf);clearInterval(sugarTimer);
- sugarStack={running:true,over:false,blocks:[],x:380,dir:1,last:performance.now(),deadline:performance.now()+4000,fall:null,scoreSaved:false,tilt:0};
+ sugarStack={running:true,over:false,blocks:[],x:380,dir:1,last:performance.now(),fall:null,scoreSaved:false,tilt:0};
  render();requestAnimationFrame(()=>{sugarDraw();});
 }
 function sugarDrop(){
@@ -163,11 +163,12 @@ function sugarDraw(){
  // tower physics
  g.blocks.forEach((b,i)=>{ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.angle||0);ctx.fillStyle='#fff';ctx.strokeStyle='#d9d9d9';ctx.lineWidth=2;ctx.fillRect(-28,-15,56,30);ctx.strokeRect(-28,-15,56,30);ctx.restore()});
  if(g.running){
-  const speed=180+g.blocks.length*5;
-  g.x+=g.dir*speed*dt;if(g.x>700){g.x=700;g.dir=-1}if(g.x<60){g.x=60;g.dir=1}
+  const speed=190+g.blocks.length*14;
+  const speedLabel=document.getElementById('sugarSpeed');if(speedLabel)speedLabel.textContent=g.blocks.length===0?'기본':`${Math.round(speed)} px/s`;
+  // 집게 이동 구간을 화면 안쪽으로 모아 왕복 대기 시간을 줄임
+  g.x+=g.dir*speed*dt;if(g.x>650){g.x=650;g.dir=-1}if(g.x<110){g.x=110;g.dir=1}
   ctx.strokeStyle='#777';ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(g.x,0);ctx.lineTo(g.x,15);ctx.stroke();
   ctx.fillStyle='#777';ctx.fillRect(g.x-20,12,40,8);ctx.fillStyle='#fff';ctx.strokeStyle='#bbb';ctx.lineWidth=2;ctx.fillRect(g.x-28,24,56,30);ctx.strokeRect(g.x-28,24,56,30);
-  if(!g.fall){const left=Math.max(0,(g.deadline-now)/1000);const el=document.getElementById('sugarTime');if(el)el.textContent=left.toFixed(1);if(left<=0)sugarDrop();}
   if(g.fall){
    const f=g.fall;f.vy+=950*dt;f.y+=f.vy*dt;
    const baseY=459-g.blocks.length*30;
@@ -181,7 +182,7 @@ function sugarDraw(){
      g.tilt=(g.tilt||0)+(nx-380)*.0007;
      g.fall=null;
      if(Math.abs(g.tilt)>0.42){setTimeout(()=>sugarFinish(),250)}
-     else {g.deadline=performance.now()+Math.max(1100,4000-g.blocks.length*115);const count=document.getElementById('sugarCount');if(count)count.textContent=g.blocks.length;}
+     else {const count=document.getElementById('sugarCount');if(count)count.textContent=g.blocks.length;}
     }
    }else{ctx.save();ctx.translate(f.x,f.y);ctx.rotate(f.angle);ctx.fillStyle='#fff';ctx.strokeStyle='#bbb';ctx.fillRect(-28,-15,56,30);ctx.strokeRect(-28,-15,56,30);ctx.restore()}
   }
