@@ -175,11 +175,11 @@ function sugarDraw(){
    if(f.y+15>=baseY){
     const target=g.blocks.length?g.blocks[g.blocks.length-1].x:380;
     const offset=f.x-target;
-    if(Math.abs(offset)>34){g.blocks.push({x:f.x,y:baseY-15,angle:Math.sign(offset)*.12});g.fall=null;setTimeout(()=>sugarFinish(),350);}
+    if(Math.abs(offset)>(g.blocks.length===0?115:34)){g.blocks.push({x:f.x,y:baseY-15,angle:Math.sign(offset)*.12});g.fall=null;setTimeout(()=>sugarFinish(),350);}
     else{
      const nx=target+offset*.32;g.blocks.push({x:nx,y:baseY-15,angle:offset*.006});
      // center-of-mass balance test: accumulated lateral drift
-     g.tilt=(g.tilt||0)+(nx-380)*.0007;
+     if(g.blocks.length>1)g.tilt=(g.tilt||0)+(nx-380)*.0007;
      g.fall=null;
      if(Math.abs(g.tilt)>0.42){setTimeout(()=>sugarFinish(),250)}
      else {const count=document.getElementById('sugarCount');if(count)count.textContent=g.blocks.length;}
