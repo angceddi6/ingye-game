@@ -41,7 +41,7 @@ app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html
 const rooms = new Map();
 const MAX_PLAYERS = 10;
 const COLORS = ['#ff6b6b','#ff9f43','#feca57','#1dd1a1','#48dbfb','#54a0ff','#5f27cd','#a55eea','#ff6bcb','#10ac84'];
-const GAMES = new Set(['shooter','music','apple','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','catchmind','gomoku','twenty','minesweeper','tagger','maze','redlight','bearbattle','territory','bubble','zombie','tetris','blockgame','othello','loserps','sugarstack','mole','game2048','jump']);
+const GAMES = new Set(['shooter','music','apple','bingo','dodge','race','timing','liar','bomb','memory','typing','waterball','catchmind','gomoku','twenty','minesweeper','tagger','maze','redlight','bearbattle','territory','bubble','zombie','tetris','blockgame','othello','loserps','sugarstack','mole','game2048','jump','sudoku']);
 const CATCHMIND_CHOOSE_MS = 10_000;
 const CATCHMIND_DRAW_MS = 80_000;
 const CATCHMIND_HINT_DELAYS = [30_000,45_000,60_000];
@@ -530,7 +530,7 @@ io.on('connection', socket => {
     if(!nickname) return cb({ok:false,message:'닉네임을 입력해주세요.'});
     if(!room) return cb({ok:false,message:'존재하지 않는 초대코드입니다.'});
     if(room.game==='othello'&&room.othello.mode==='computer')return cb({ok:false,message:'컴퓨터 대전 방에는 참가할 수 없습니다.'});
-    if(['apple','music','shooter'].includes(room.game)) return cb({ok:false,message:'이 게임은 1인용 게임이라 참가할 수 없습니다.'});
+    if(['apple','music','shooter','sudoku'].includes(room.game)) return cb({ok:false,message:'이 게임은 1인용 게임이라 참가할 수 없습니다.'});
     if(['countdown','playing','voting'].includes(room.phase)) return cb({ok:false,message:'게임이 진행중입니다.'});
     if(room.game==='bearbattle'&&room.players.size>=2)return cb({ok:false,message:'달구vs살구는 2명만 참가할 수 있습니다.'});
     if(room.players.size>=MAX_PLAYERS) return cb({ok:false,message:'방이 가득 찼습니다.'});
