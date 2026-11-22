@@ -504,17 +504,17 @@ io.on('connection', socket => {
     }
   });
   socket.on('minigame:records:list', async ({game}={}, cb=()=>{}) => {
-    if (!['dodge','typing','bubble','tetris','blockgame','loserps','sugarstack','mole','game2048','jump'].includes(game)) return cb({ok:false,records:[],message:'게임 종류가 올바르지 않습니다.'});
+    if (!['dodge','typing','bubble','tetris','blockgame','loserps','sugarstack','mole','game2048','jump','sudoku_veryeasy','sudoku_easy','sudoku_normal','sudoku_hard','sudoku_veryhard'].includes(game)) return cb({ok:false,records:[],message:'게임 종류가 올바르지 않습니다.'});
     if (!recordPool || !recordDbReady) return cb({ok:false,records:[],message:'영구 기록 저장소가 아직 연결되지 않았습니다.'});
     try {
-      const order = game==='dodge' ? 'score_value DESC, created_at ASC' : 'score_value DESC, created_at ASC';
+      const order = game.startsWith('sudoku_') ? 'score_value ASC, created_at ASC' : 'score_value DESC, created_at ASC';
       const q = await recordPool.query(`SELECT nickname, score_value AS score, score_detail AS detail, created_at FROM minigame_records WHERE game_key=$1 ORDER BY ${order} LIMIT 10`,[game]);
       cb({ok:true,records:q.rows});
     } catch(e) { console.error('Game records list failed:',e.message); cb({ok:false,records:[],message:'기록을 불러오지 못했습니다.'}); }
   });
   socket.on('minigame:records:save', async ({game,score,detail}={}, cb=()=>{}) => {
     const room=getRoom(socket), player=room?.players.get(socket.id); score=Number(score);
-    if (!room || !player || !['dodge','typing','bubble','tetris','blockgame','loserps','sugarstack','mole','game2048','jump'].includes(game) || (['tetris','blockgame'].includes(game)&&room.game!==game) || (game==='bubble' && (room.game!=='bubble'||room.phase!=='finished')) || (game==='loserps' && room.game!=='loserps') || (game==='sugarstack' && room.game!=='sugarstack') || (['mole','game2048','jump'].includes(game) && room.game!==game) || !Number.isInteger(score) || score<0 || score>1000000) return cb({ok:false,message:'기록을 저장할 수 없습니다.'});
+    if (!room || !player || !['dodge','typing','bubble','tetris','blockgame','loserps','sugarstack','mole','game2048','jump','sudoku_veryeasy','sudoku_easy','sudoku_normal','sudoku_hard','sudoku_veryhard'].includes(game) || (['tetris','blockgame'].includes(game)&&room.game!==game) || (game==='bubble' && (room.game!=='bubble'||room.phase!=='finished')) || (game==='loserps' && room.game!=='loserps') || (game==='sugarstack' && room.game!=='sugarstack') || (['mole','game2048','jump'].includes(game) && room.game!==game) || (game.startsWith('sudoku_') && room.game!=='sudoku') || !Number.isInteger(score) || score<0 || score>1000000 || (game.startsWith('sudoku_') && score<1)) return cb({ok:false,message:'기록을 저장할 수 없습니다.'});
     if (!recordPool || !recordDbReady) return cb({ok:false,message:'영구 기록 저장소가 아직 연결되지 않았습니다.'});
     try { await recordPool.query('INSERT INTO minigame_records (game_key,nickname,score_value,score_detail) VALUES ($1,$2,$3,$4)',[game,String(player.nickname).slice(0,40),score,String(detail||'').slice(0,100)]); cb({ok:true}); io.emit('minigame:records:updated',{game}); }
     catch(e) { console.error('Game record save failed:',e.message); cb({ok:false,message:'기록 저장에 실패했습니다.'}); }
